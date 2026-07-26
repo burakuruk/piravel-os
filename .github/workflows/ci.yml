@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck · Lint · Test · Build
+    runs-on: ubuntu-latest
+
+    # Migration ve rol kurulumunun gerçekten koştuğunu doğrulamak için
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: piravel
+          POSTGRES_PASSWORD: piravel
+          POSTGRES_DB: piravel_os
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U piravel -d piravel_os"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_ADMIN_URL: postgres://piravel:piravel@localhost:5432/piravel_os
+      DATABASE_URL: postgres://piravel_app:piravel_app@localhost:5432/piravel_os
+      APP_DB_PASSWORD: piravel_app
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Bağımlılıklar
+        run: npm ci
+
+      - name: Typecheck (strict)
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Birim testleri
+        run: npm test
+
+      - name: Migration'lar (şema v1.2)
+        run: npm run db:migrate
+
+      - name: Migration idempotency (ikinci çalıştırma değişiklik üretmemeli)
+        run: npm run db:migrate
+
+      - name: Uygulama DB rolü + audit_logs yetkileri
+        run: npm run db:roles
+
+      - name: Audit_logs değiştirilemezliği (rol + trigger)
+        run: npm run db:verify-audit
+
+      - name: Production build
+        run: npm run build

@@ -1,0 +1,87 @@
+@import "tailwindcss";
+
+/* ════════════════════════════════════════════════════════════════
+   Piravel OS Design Token'ları — 06-ui-ux-tasarim-sistemi.md §4–§6
+   Tema: açık içerik + koyu lacivert kabuk (tek tema, MVP)
+   ════════════════════════════════════════════════════════════════ */
+
+@theme {
+  /* ── Marka: lacivert ── */
+  --color-navy-950: #10142a;
+  --color-navy-900: #191e38;
+  --color-navy-800: #232a4d;
+  --color-navy-700: #2f3763;
+  --color-navy-500: #4a5490;
+  --color-navy-100: #e3e5f0;
+
+  /* ── Marka: altın (yalnız §3 sözleşmesindeki yerlerde) ── */
+  --color-gold-600: #8c733f;
+  --color-gold-500: #a58950;
+  --color-gold-200: #dccca8;
+  --color-gold-100: #f1eada;
+
+  /* ── Zemin ── */
+  --color-paper: #faf9f6;
+  --color-surface: #ffffff;
+
+  /* ── Sıcak nötrler ── */
+  --color-ink-900: #21242e;
+  --color-ink-600: #565a66;
+  --color-ink-400: #8b8e96;
+  --color-line-200: #e9e6de;
+  --color-line-300: #dbd7cc;
+  --color-fill-100: #f3f1eb;
+
+  /* ── İşlevsel (durum bildirir, dekorasyon değil) ── */
+  --color-success: #2e7d4f;
+  --color-success-bg: #eaf3ec;
+  --color-warning: #9a6700;
+  --color-warning-bg: #f9f0dc;
+  --color-danger: #b3382e;
+  --color-danger-bg: #f9e9e7;
+  --color-info: #3b5b8c;
+  --color-info-bg: #e9eef6;
+
+  /* ── Koyu kabuk (sidebar) ── */
+  --color-shell-text: #c9ccda;
+  --color-shell-muted: #8a8fa8;
+  --color-shell-divider: #2a3050;
+
+  /* ── Tipografi (next/font değişkenleri layout.tsx'ten) ── */
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-fraunces), Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  /* ── Radius: en fazla 8px (06 §6) ── */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* ── Gölge: ayrım çizgiyle yapılır, gölge katmanlara ── */
+  --shadow-sm: 0 1px 2px rgb(25 30 56 / 0.06);
+  --shadow-md: 0 4px 16px rgb(25 30 56 / 0.1);
+  --shadow-lg: 0 8px 32px rgb(25 30 56 / 0.16);
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink-900);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* Tüm parasal/tablo rakamları: tabular + lining (06 §5, pazarlıksız kural) */
+.tnum,
+[data-amount] {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+/* Odak halkası: açık zeminde lacivert, koyu kabukta altın (06 §15) */
+:focus-visible {
+  outline: 2px solid var(--color-navy-500);
+  outline-offset: 2px;
+}
+[data-shell] :focus-visible {
+  outline-color: var(--color-gold-500);
+}
