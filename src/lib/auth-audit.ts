@@ -27,12 +27,12 @@ export interface AuthAuditInput {
   actorEmail?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
-  /**
-   * İstek kimliği (x-request-id başlığından). Testler kendi ürettikleri
-   * kayıtları bu alanla bulur — zaman penceresine dayanmak yerine.
-   * Append-only geçmişe dokunulmaz.
-   */
+  /** SUNUCU üretimi kanonik istek kimliği (istemci seçemez) */
   requestId?: string | null;
+  /** İstemcinin x-request-id beyanı — yalnız korelasyon, güvenilmez */
+  upstreamRequestId?: string | null;
+  /** Test izolasyonu; üretimde daima null */
+  testRunId?: string | null;
   /** Ek bağlam — sırlar redact() ile temizlenir */
   context?: Record<string, unknown>;
 }
@@ -60,6 +60,8 @@ export async function writeAuthAudit(input: AuthAuditInput): Promise<void> {
       ipAddress: input.ipAddress ?? null,
       userAgent: input.userAgent ?? null,
       requestId: input.requestId ?? null,
+      upstreamRequestId: input.upstreamRequestId ?? null,
+      testRunId: input.testRunId ?? null,
     });
   } catch (err) {
     // Audit yazımı giriş akışını ASLA bloke etmez; ama sessizce de kaybolmaz.

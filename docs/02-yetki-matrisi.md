@@ -153,7 +153,55 @@ Bu akışlar **bizim API'mizde yeniden yazılmaz**; Better Auth uçları + bizim
 | Şifre sıfırlama | Better Auth (e-posta akışı) | Audit kaydı |
 | TOTP kurulumu + recovery code | Better Auth `twoFactor` eklentisi | SA + FIN için **zorunlu 2FA**: middleware, 2FA'sız SA/FIN oturumunu yalnızca 2FA kurulum sayfasına yönlendirir |
 | Oturum listesi / iptal | Better Auth | Kullanıcı kendi oturumlarını görür/iptal eder; SA herkesin oturumunu iptal edebilir (audit'e yazılır) |
-| Hassas işlem öncesi yeniden doğrulama | Better Auth `freshAge` (oturum tazeliği) | Kritik uçlarda (allocation reverse, refund, kullanıcı rolü değişimi, maskesiz IBAN, settings) taze oturum + gerekirse TOTP yeniden istenir |
+| Hassas işlem öncesi yeniden doğrulama | Better Auth `freshAge` (oturum tazeliği) — **temel koruma** | **Step-up kaydı** (`auth_reauthentication`): kullanıcının O AN parolasını (2FA açıksa TOTP'sini de) yeniden girdiğini kanıtlar. Ayrıntı §8 |
+
+## 8. Step-up (adım yükseltme) kimlik doğrulaması
+
+`freshAge` tek başına yetmez: yalnız "oturum ne zaman kuruldu" sorusuna bakar.
+4 dakika önce giriş yapmış bir kullanıcının oturumu taze sayılır ve kritik işlem
+**açık bir doğrulama olmadan** geçer — bilgisayarını açık bırakmış kullanıcının
+başında duran biri de o tazelikten yararlanır. Step-up, freshAge'in **yerine
+değil üstüne** biner.
+
+**Kurallar**
+
+| Konu | Karar |
+|---|---|
+| Geçerlilik | 5 dakika |
+| Bağlanma | `session_id`'ye bağlı — başka oturum devralamaz |
+| Doğrulama | Parola zorunlu; **2FA etkinse TOTP de zorunlu** |
+| Saklama | Yalnız veritabanı. `localStorage` **kullanılmaz** |
+| Geçersizleşme | Süre dolumu · oturum silinmesi (FK CASCADE) · kullanıcının devre dışı bırakılması · parola sıfırlama · 2FA kurulum/sıfırlama |
+| Kapı | Geçerli yükseltme yoksa kritik uç **`SESSION_STALE`** döner |
+
+**Step-up isteyen işlemler**
+
+| İşlem | Sabit |
+|---|---|
+| Rol değiştirme | `user.role_change` |
+| Kullanıcı devre dışı bırakma | `user.deactivate` |
+| super_admin / finance oluşturma | `user.create_privileged` |
+| Tüm oturumları iptal etme | `user.revoke_all_sessions` |
+| 2FA sıfırlama | `user.reset_two_factor` |
+| Maskesiz IBAN görüntüleme | `bank_account.view_unmasked_iban` |
+| Allocation reverse | `allocation.reverse` |
+| Refund | `receivable.refund` |
+| Ayar güncelleme | `settings.update` |
+
+**Uç:** `POST /api/v1/reauth` (parola + gerekiyorsa `totpCode`) · `GET /api/v1/reauth` (durum sorgusu)
+
+## 9. İstek kimliği güven sınırı
+
+| Alan | Kaynak | Güvenilir mi |
+|---|---|---|
+| `request_id` | **Sunucu** üretir (UUID v7) | ✅ Denetim sorgularının kimliği budur |
+| `upstream_request_id` | İstemcinin `x-request-id` başlığı | ❌ Yalnız dağıtık izleme korelasyonu |
+| `test_run_id` | `x-test-run-id` başlığı, **yalnız üretim dışı** | Test izolasyonu; üretimde daima `NULL` |
+
+İstemci kanonik kimliği seçemez: seçebilseydi saldırgan kendi izini başka bir
+isteğin kimliğiyle karıştırabilir veya denetim sorgularını yanıltabilirdi.
+Başlık değerleri uzunluk ve karakter kümesi bakımından temizlenir (log
+enjeksiyonu engeli).
 | Rol saklama | Bizim `users.role` kolonumuz | Better Auth session'ına custom claim olarak eklenir; **her istekte DB'den doğrulanır** (session'daki role güvenilmez) |
 
 ---

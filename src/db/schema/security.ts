@@ -72,12 +72,55 @@ export const authLoginAttempts = pgTable(
     attemptType: text("attempt_type").notNull(),
     succeeded: boolean("succeeded").notNull(),
     attemptedAt: timestamp("attempted_at", { withTimezone: true }).notNull().defaultNow(),
+    /** Sunucu tarafından üretilen kanonik kimlik (istemci seçemez) */
     requestId: text("request_id"),
+    /** İstemcinin gönderdiği x-request-id — yalnız korelasyon, güvenilmez */
+    upstreamRequestId: text("upstream_request_id"),
+    /** Test izolasyonu; üretimde daima NULL */
+    testRunId: text("test_run_id"),
   },
   (t) => [
     index("idx_attempts_identifier").on(t.identifierHash, t.attemptedAt),
     index("idx_attempts_user").on(t.userId, t.attemptedAt),
     index("idx_attempts_recent").on(t.attemptedAt).where(sql`${t.succeeded} = false`),
+  ],
+);
+
+/**
+ * Adım yükseltme (step-up) kimlik doğrulaması — kritik işlemler için.
+ *
+ * ⚠ Neden Better Auth'un `freshAge`'i tek başına yetmez:
+ * freshAge yalnız "oturum ne zaman oluşturuldu/yenilendi" sorusuna bakar.
+ * Kullanıcı 4 dakika önce giriş yaptıysa oturum "taze" sayılır ve kritik
+ * işlem AÇIK BİR DOĞRULAMA OLMADAN geçer. Oysa bilgisayarını açık bırakmış
+ * bir kullanıcının başında duran biri de o tazelikten yararlanır.
+ *
+ * Bu tablo, kullanıcının o an parolasını (ve 2FA açıksa TOTP'sini) gerçekten
+ * yeniden girdiğini kanıtlar. freshAge temel koruma olarak kalır; bu kayıt
+ * onun yerine değil, üstüne biner.
+ *
+ * Geçersizleşme yolları:
+ *   · 5 dakikada süre dolar
+ *   · Oturum silinince (FK CASCADE)
+ *   · Kullanıcı devre dışı bırakılınca (uygulama katmanı siler)
+ *   · Parola veya 2FA sıfırlanınca (uygulama katmanı siler)
+ */
+export const authReauthentication = pgTable(
+  "auth_reauthentication",
+  {
+    id: idCol(),
+    /** Yükseltme BU oturuma bağlıdır; başka oturuma taşınamaz */
+    sessionId: text("session_id").notNull(),
+    userId: text("user_id").notNull(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /** 'password' | 'password_totp' — 2FA açıksa ikincisi zorunludur */
+    method: text("method").notNull(),
+    createdRequestId: text("created_request_id"),
+  },
+  (t) => [
+    index("idx_reauth_session").on(t.sessionId, t.expiresAt),
+    index("idx_reauth_user").on(t.userId),
   ],
 );
 

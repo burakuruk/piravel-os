@@ -15,17 +15,29 @@ import {
   totpSayaciSifirla,
   type DenemeTuru,
 } from "@/lib/auth-lockout";
+import { buildRequestContext, type RequestContext } from "@/lib/request-context";
 
 /**
  * Giriş güvenliği kancaları — hesap bazlı kilit katmanı.
  *
- * ⚠ KULLANICI MESAJLARI SABİTTİR (Sprint 1 kararı, C maddesi):
+ * ⚠ KULLANICI MESAJLARI SABİTTİR:
  * Hangi alanın yanlış olduğu, hesabın var olup olmadığı veya kaç deneme
  * kaldığı ASLA söylenmez. Bilinmeyen hesap ile kayıtlı hesap aynı yanıtı,
  * aynı biçimde alır — kullanıcı enumeration'ı bu şekilde engellenir.
  */
 
 export { MESAJ };
+
+/** Denetim kayıtlarına giden ortak izleme alanları. */
+function iz(rc: RequestContext) {
+  return {
+    ipAddress: rc.ipAddress,
+    userAgent: rc.userAgent,
+    requestId: rc.requestId,
+    upstreamRequestId: rc.upstreamRequestId,
+    testRunId: rc.testRunId,
+  };
+}
 
 /** Kilitli hesap için tek tip yanıt (Retry-After ile). */
 function kilitliHatasi(kalanSaniye: number): APIError {
@@ -67,18 +79,10 @@ async function parolaHashi(userId: string): Promise<string | null> {
   return rows[0]?.password ?? null;
 }
 
-function istemciIp(headers: Headers | undefined): string | null {
-  return headers?.get("x-forwarded-for") ?? headers?.get("x-real-ip") ?? null;
-}
-
-function istekId(headers: Headers | undefined): string | null {
-  return headers?.get("x-request-id") ?? null;
-}
-
 /**
  * Parola girişi ÖNCESİ.
  *
- * ⚠ ENUMERATION KURALI (Sprint 1 kararı):
+ * ⚠ ENUMERATION KURALI:
  * Kilit durumu, parola DOĞRU olmadıkça asla ele verilmez. Aksi hâlde
  * "kilitli hesap 429, bilinmeyen hesap 401" farkı bir oracle olur ve
  * saldırgan hangi e-postaların kayıtlı olduğunu öğrenir.
@@ -111,10 +115,11 @@ export async function parolaGirisiOncesi(
   // Hesap kilitli. Kararı vermek için parolanın doğru olup olmadığını
   // BİZ kontrol ederiz; Better Auth'a hiç ulaşmadan yanıt şekillenir.
   const hash = await parolaHashi(user.id);
-  const parolaDogru = hash ? await kripto.verify({ hash, password: parola }).catch(() => false) : false;
+  const parolaDogru = hash
+    ? await kripto.verify({ hash, password: parola }).catch(() => false)
+    : false;
 
-  const ip = istemciIp(headers);
-  const rid = istekId(headers);
+  const rc = buildRequestContext(headers);
 
   if (!parolaDogru) {
     // Kilitliyken yanlış parola: bilinmeyen hesapla AYNI yanıt (401).
@@ -122,18 +127,18 @@ export async function parolaGirisiOncesi(
     await denemeKaydet({
       userId: user.id,
       email,
-      ip,
+      ip: rc.ipAddress,
       attemptType: "password",
       succeeded: false,
-      requestId: rid,
+      requestId: rc.requestId,
+      upstreamRequestId: rc.upstreamRequestId,
+      testRunId: rc.testRunId,
     });
     await writeAuthAudit({
       action: "login_failed",
       actorId: user.id,
       actorEmail: user.email,
-      ipAddress: ip,
-      userAgent: headers?.get("user-agent") ?? null,
-      requestId: rid,
+      ...iz(rc),
       context: { kilitliyken: true },
     });
     throw gecersizKimlikHatasi();
@@ -144,9 +149,7 @@ export async function parolaGirisiOncesi(
     action: "login_rate_limited",
     actorId: user.id,
     actorEmail: user.email,
-    ipAddress: ip,
-    userAgent: headers?.get("user-agent") ?? null,
-    requestId: rid,
+    ...iz(rc),
     context: { neden: "hesap_kilitli", yenidenDeneSaniye: kilit.kalanSaniye },
   });
 
@@ -160,18 +163,18 @@ export async function parolaGirisiSonrasi(
   userId: string | null,
   headers: Headers | undefined,
 ): Promise<void> {
-  const ip = istemciIp(headers);
-  const ua = headers?.get("user-agent") ?? null;
-  const rid = istekId(headers);
+  const rc = buildRequestContext(headers);
   const user = userId ? { id: userId, email } : await kullaniciBul(email);
 
   await denemeKaydet({
     userId: user?.id ?? null,
     email,
-    ip,
+    ip: rc.ipAddress,
     attemptType: "password",
     succeeded: basarili,
-    requestId: rid,
+    requestId: rc.requestId,
+    upstreamRequestId: rc.upstreamRequestId,
+    testRunId: rc.testRunId,
   });
 
   if (basarili && user) {
@@ -180,9 +183,7 @@ export async function parolaGirisiSonrasi(
       action: "login",
       actorId: user.id,
       actorEmail: user.email ?? email,
-      ipAddress: ip,
-      userAgent: ua,
-      requestId: rid,
+      ...iz(rc),
     });
     if (sifirlandi) {
       // Kilit/sayaç temizlendi — denetim izinde görünmeli
@@ -190,8 +191,7 @@ export async function parolaGirisiSonrasi(
         action: "security_counter_reset",
         actorId: user.id,
         actorEmail: user.email ?? email,
-        ipAddress: ip,
-        requestId: rid,
+        ...iz(rc),
         context: { sayac: "giris" },
       });
     }
@@ -202,9 +202,7 @@ export async function parolaGirisiSonrasi(
     action: "login_failed",
     actorId: user?.id ?? null,
     actorEmail: email || null,
-    ipAddress: ip,
-    userAgent: ua,
-    requestId: rid,
+    ...iz(rc),
   });
 
   if (!user) return; // Bilinmeyen hesapta kilitlenecek bir şey yok
@@ -215,8 +213,7 @@ export async function parolaGirisiSonrasi(
       action: "account_temporarily_locked",
       actorId: user.id,
       actorEmail: user.email ?? email,
-      ipAddress: ip,
-      requestId: rid,
+      ...iz(rc),
       context: { sayac: "giris", kilitSaniye: sonuc.kalanSaniye },
     });
   }
@@ -231,11 +228,11 @@ export async function ikinciAdimOncesi(
   const kilit = await totpKilidi(userId);
   if (!kilit.kilitli) return;
 
+  const rc = buildRequestContext(headers);
   await writeAuthAudit({
     action: "login_rate_limited",
     actorId: userId,
-    ipAddress: istemciIp(headers),
-    requestId: istekId(headers),
+    ...iz(rc),
     context: { neden: "ikinci_adim_kilitli", yenidenDeneSaniye: kilit.kalanSaniye },
   });
 
@@ -250,9 +247,17 @@ export async function ikinciAdimSonrasi(
   basarili: boolean,
   headers: Headers | undefined,
 ): Promise<void> {
-  const ip = istemciIp(headers);
-  const rid = istekId(headers);
-  await denemeKaydet({ userId, email, ip, attemptType: tur, succeeded: basarili, requestId: rid });
+  const rc = buildRequestContext(headers);
+  await denemeKaydet({
+    userId,
+    email,
+    ip: rc.ipAddress,
+    attemptType: tur,
+    succeeded: basarili,
+    requestId: rc.requestId,
+    upstreamRequestId: rc.upstreamRequestId,
+    testRunId: rc.testRunId,
+  });
   if (!userId) return;
 
   if (basarili) {
@@ -266,8 +271,7 @@ export async function ikinciAdimSonrasi(
       action: "account_temporarily_locked",
       actorId: userId,
       actorEmail: email || null,
-      ipAddress: ip,
-      requestId: rid,
+      ...iz(rc),
       context: { sayac: "ikinci_adim", kilitSaniye: sonuc.kalanSaniye },
     });
   }

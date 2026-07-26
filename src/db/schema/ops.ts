@@ -112,7 +112,23 @@ export const auditLogs = pgTable(
     changes: jsonb("changes"),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
+    /**
+     * SUNUCU tarafından üretilen kanonik istek kimliği. İstemci bu değeri
+     * seçemez — seçebilseydi saldırgan kendi izini başka bir isteğin
+     * kimliğiyle karıştırabilir veya denetim sorgularını yanıltabilirdi.
+     */
     requestId: text("request_id"),
+    /**
+     * İstemcinin gönderdiği x-request-id. YALNIZ bilgi amaçlıdır (dağıtık
+     * izleme korelasyonu); güvenilir kabul edilmez ve sorgularda kimlik
+     * yerine kullanılmaz.
+     */
+    upstreamRequestId: text("upstream_request_id"),
+    /**
+     * Test izolasyonu. YALNIZCA üretim dışı ortamlarda, x-test-run-id
+     * başlığından doldurulur; üretimde daima NULL'dur.
+     */
+    testRunId: text("test_run_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

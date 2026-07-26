@@ -315,16 +315,23 @@ export async function denemeKaydet(input: {
   ip: string | null;
   attemptType: DenemeTuru;
   succeeded: boolean;
+  /** Sunucu üretimi kanonik kimlik */
   requestId?: string | null;
+  /** İstemci beyanı — güvenilmez, yalnız korelasyon */
+  upstreamRequestId?: string | null;
+  /** Test izolasyonu; üretimde daima null */
+  testRunId?: string | null;
 }): Promise<void> {
   try {
     // ID uygulamada üretilir (UUID v7 standardı, şema Karar 6)
     await db.execute(sql`
       INSERT INTO auth_login_attempts
-        (id, user_id, identifier_hash, ip_hash, attempt_type, succeeded, request_id)
+        (id, user_id, identifier_hash, ip_hash, attempt_type, succeeded,
+         request_id, upstream_request_id, test_run_id)
       VALUES (
         ${newId()}, ${input.userId}, ${kimlikHash(input.email)}, ${ipHash(input.ip)},
-        ${input.attemptType}, ${input.succeeded}, ${input.requestId ?? null}
+        ${input.attemptType}, ${input.succeeded}, ${input.requestId ?? null},
+        ${input.upstreamRequestId ?? null}, ${input.testRunId ?? null}
       )
     `);
   } catch (err) {

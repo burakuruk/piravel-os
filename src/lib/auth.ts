@@ -14,6 +14,7 @@ import {
   parolaGirisiSonrasi,
 } from "@/lib/auth-guards";
 import { parolaSifirlamaSonrasiTemizle } from "@/lib/auth-lockout";
+import { stepUpGecersizKil } from "@/lib/step-up";
 
 /**
  * Better Auth yapılandırması — PRD §7, docs/03 §2 (Kimlik doğrulama sınırı).
@@ -190,6 +191,18 @@ export const auth = betterAuth({
         return;
       }
 
+      /**
+       * 2FA devre dışı bırakıldıysa / sıfırlandıysa step-up geçersizdir:
+       * kanıtın dayandığı ikinci faktör artık aynı değil.
+       */
+      if (path.startsWith("/two-factor/disable") || path.startsWith("/two-factor/enable")) {
+        const session = await auth.api
+          .getSession({ headers: ctx.headers ?? new Headers() })
+          .catch(() => null);
+        if (session?.user) await stepUpGecersizKil(session.user.id);
+        return;
+      }
+
       // Parola sıfırlandıysa parola kilidi ve sayacı temizlenir
       if (path.startsWith("/reset-password")) {
         const session = await auth.api
@@ -197,11 +210,14 @@ export const auth = betterAuth({
           .catch(() => null);
         if (session?.user) {
           await parolaSifirlamaSonrasiTemizle(session.user.id);
+          // Parola değiştiyse eski step-up kanıtı da geçersizdir:
+          // yükseltme "bu parolayı bilen kişi buradaydı" demektir.
+          await stepUpGecersizKil(session.user.id);
           await writeAuthAudit({
             action: "security_counter_reset",
             actorId: session.user.id,
             actorEmail: session.user.email,
-            context: { sayac: "giris", neden: "sifirlama" },
+            context: { sayac: "giris", neden: "sifirlama", stepUp: "gecersiz" },
           });
         }
       }

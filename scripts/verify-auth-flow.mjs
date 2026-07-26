@@ -20,7 +20,7 @@ const BASE = process.env.PREVIEW_URL ?? "http://localhost:3000";
 const PAROLA = "gelistirme-test-parolasi";
 
 /**
- * Bu koşuya özgü kimlik — x-request-id olarak gönderilir, sunucu audit ve
+ * Bu koşuya özgü kimlik — x-test-run-id olarak gönderilir, sunucu audit ve
  * deneme günlüğüne yazar. Sızıntı kontrolleri yalnız bu koşunun kayıtlarına
  * bakar; zaman penceresi kullanılmaz (append-only geçmişe dokunulmaz).
  */
@@ -80,7 +80,7 @@ function client() {
           // Better Auth CSRF koruması Origin bekler (tarayıcı davranışı)
           origin: BASE,
           "x-forwarded-for": ip,
-          "x-request-id": RUN_ID,
+          "x-test-run-id": RUN_ID,
           ...(cookies ? { cookie: cookies } : {}),
         },
         body: JSON.stringify(body ?? {}),
@@ -106,7 +106,7 @@ function client() {
     },
     async get(path) {
       const res = await fetch(`${BASE}${path}`, {
-        headers: { origin: BASE, "x-forwarded-for": ip, "x-request-id": RUN_ID, ...(cookies ? { cookie: cookies } : {}) },
+        headers: { origin: BASE, "x-forwarded-for": ip, "x-test-run-id": RUN_ID, ...(cookies ? { cookie: cookies } : {}) },
         redirect: "manual",
       });
       return { status: res.status, location: res.headers.get("location") };
@@ -301,7 +301,7 @@ console.log("\n═══ 8. Sır sızıntısı kontrolü ═══");
   // Yalnız bu koşunun kayıtları (request_id ile), zaman penceresi değil
   const { rows } = await sql.query(
     `SELECT count(*)::int AS n FROM audit_logs
-     WHERE request_id = $1
+     WHERE test_run_id = $1
        AND (changes::text ILIKE '%secret%' OR changes::text ILIKE '%otpauth%'
          OR changes::text ILIKE '%backup%')`,
     [RUN_ID],
@@ -310,17 +310,17 @@ console.log("\n═══ 8. Sır sızıntısı kontrolü ═══");
 
   const { rows: pw } = await sql.query(
     `SELECT count(*)::int AS n FROM audit_logs
-     WHERE request_id = $1
+     WHERE test_run_id = $1
        AND (changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%')`,
     [RUN_ID],
   );
   check("audit_logs'ta parola izi yok (bu koşu)", pw[0].n === 0, `${pw[0].n} şüpheli kayıt`);
 
   const { rows: kanit } = await sql.query(
-    "SELECT count(*)::int AS n FROM audit_logs WHERE request_id = $1",
+    "SELECT count(*)::int AS n FROM audit_logs WHERE test_run_id = $1",
     [RUN_ID],
   );
-  check("Bu koşu audit kaydı üretti (request_id çalışıyor)", kanit[0].n > 0, `${kanit[0].n} kayıt`);
+  check("Bu koşu audit kaydı üretti (test_run_id çalışıyor)", kanit[0].n > 0, `${kanit[0].n} kayıt`);
 }
 
 await sql.end();

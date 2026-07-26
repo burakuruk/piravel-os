@@ -22,8 +22,8 @@ const PAROLA = "gelistirme-test-parolasi";
 const HEDEF = "member@example.com";
 
 /**
- * Bu koşuya özgü kimlik. Her istekte x-request-id olarak gönderilir; sunucu
- * audit_logs.request_id ve auth_login_attempts.request_id alanlarına yazar.
+ * Bu koşuya özgü kimlik. Her istekte x-test-run-id olarak gönderilir; sunucu
+ * bunu test_run_id alanına yazar (yalnız üretim dışı ortamda).
  *
  * Testler YALNIZCA kendi ürettikleri kayıtları sorgular — zaman penceresine
  * dayanmak yerine. audit_logs append-only'dir; geçmişe dokunulmaz.
@@ -66,7 +66,7 @@ async function girisDene(email, password, ip = yeniIp()) {
       "Content-Type": "application/json",
       origin: BASE,
       "x-forwarded-for": ip,
-      "x-request-id": RUN_ID,
+      "x-test-run-id": RUN_ID,
     },
     body: JSON.stringify({ email, password }),
     redirect: "manual",
@@ -88,7 +88,7 @@ async function girisDene(email, password, ip = yeniIp()) {
 /** Bu koşuda üretilen audit kayıtlarını sayar (zaman penceresi kullanmaz). */
 async function kosuAuditSayisi(action) {
   const { rows } = await sql.query(
-    "SELECT count(*)::int AS n FROM audit_logs WHERE request_id=$1 AND action=$2",
+    "SELECT count(*)::int AS n FROM audit_logs WHERE test_run_id=$1 AND action=$2",
     [RUN_ID, action],
   );
   return rows[0].n;
@@ -136,22 +136,49 @@ console.log("\n═══ 2. Kilitliyken: parola doğruysa 429, yanlışsa 401 �
 
 console.log("\n═══ 2b. ENUMERATION: kilitli hesap ile bilinmeyen hesap ayırt edilemez ═══");
 {
-  // Isınma: ilk istek JIT/bağlantı maliyeti taşır, ölçüme dahil edilmez
-  await girisDene("isinma@example.com", "yanlis-parola-123");
+  /**
+   * Zamanlama ölçümü: tek örnek gürültüye açıktır. 40 tekrar alınır ve
+   * MEDYAN ile p95 karşılaştırılır. Örnekler dönüşümlü (interleaved)
+   * toplanır: art arda ölçüm yapılsaydı sunucu ısınması/GC dalgalanması
+   * bir gruba sistematik olarak yansırdı.
+   */
+  const TEKRAR = 40;
 
-  const olcum = async (email) => {
-    const sureler = [];
-    let sonuc;
-    for (let i = 0; i < 5; i++) {
-      sonuc = await girisDene(email, "yanlis-parola-123");
-      sureler.push(sonuc.sureMs);
+  // Isınma: ilk istekler JIT/bağlantı maliyeti taşır, ölçüme girmez
+  for (let i = 0; i < 5; i++) await girisDene("isinma@example.com", "yanlis-parola-123");
+
+  const kilitliSureler = [];
+  const bilinmeyenSureler = [];
+  let kilitliSon;
+  let bilinmeyenSon;
+
+  for (let i = 0; i < TEKRAR; i++) {
+    // Sıra her turda değişir; tek yönlü sapma birikmesin
+    if (i % 2 === 0) {
+      kilitliSon = await girisDene(HEDEF, "yanlis-parola-123");
+      kilitliSureler.push(kilitliSon.sureMs);
+      bilinmeyenSon = await girisDene("kesinlikle-yok@example.com", "yanlis-parola-123");
+      bilinmeyenSureler.push(bilinmeyenSon.sureMs);
+    } else {
+      bilinmeyenSon = await girisDene("kesinlikle-yok@example.com", "yanlis-parola-123");
+      bilinmeyenSureler.push(bilinmeyenSon.sureMs);
+      kilitliSon = await girisDene(HEDEF, "yanlis-parola-123");
+      kilitliSureler.push(kilitliSon.sureMs);
     }
-    sureler.sort((a, b) => a - b);
-    return { ortanca: sureler[2], status: sonuc.status, json: sonuc.json };
-  };
+  }
 
-  const kilitli = await olcum(HEDEF); // hâlâ kilitli
-  const bilinmeyen = await olcum("kesinlikle-yok@example.com");
+  const yuzdelik = (dizi, p) => {
+    const s = [...dizi].sort((a, b) => a - b);
+    return s[Math.min(s.length - 1, Math.floor((s.length - 1) * p))];
+  };
+  const ozet = (dizi) => ({ medyan: yuzdelik(dizi, 0.5), p95: yuzdelik(dizi, 0.95) });
+
+  const kilitli = { ...ozet(kilitliSureler), status: kilitliSon.status, json: kilitliSon.json };
+  const bilinmeyen = {
+    ...ozet(bilinmeyenSureler),
+    status: bilinmeyenSon.status,
+    json: bilinmeyenSon.json,
+  };
 
   check(
     "Aynı HTTP durumu",
@@ -169,13 +196,21 @@ console.log("\n═══ 2b. ENUMERATION: kilitli hesap ile bilinmeyen hesap ay�
     `${kilitli.json?.code} / ${bilinmeyen.json?.code}`,
   );
 
-  // Zamanlama: sahte hash doğrulaması sayesinde makul tolerans içinde
-  const oran = Math.max(kilitli.ortanca, bilinmeyen.ortanca) /
-    Math.max(1, Math.min(kilitli.ortanca, bilinmeyen.ortanca));
+  // Zamanlama: sahte hash doğrulaması sayesinde makul tolerans içinde.
+  // Medyan asıl ölçüt; p95 kuyrukta sistematik bir sapma var mı diye bakar.
+  const oranHesapla = (a, b) => Math.max(a, b) / Math.max(1, Math.min(a, b));
+  const medyanOran = oranHesapla(kilitli.medyan, bilinmeyen.medyan);
+  const p95Oran = oranHesapla(kilitli.p95, bilinmeyen.p95);
+
   check(
-    "Yanıt süreleri benzer (oran < 3x)",
-    oran < 3,
-    `kilitli=${kilitli.ortanca.toFixed(0)}ms bilinmeyen=${bilinmeyen.ortanca.toFixed(0)}ms oran=${oran.toFixed(2)}x`,
+    `Medyan süreler benzer (oran < 2x, ${TEKRAR} tekrar)`,
+    medyanOran < 2,
+    `kilitli=${kilitli.medyan.toFixed(0)}ms bilinmeyen=${bilinmeyen.medyan.toFixed(0)}ms oran=${medyanOran.toFixed(2)}x`,
+  );
+  check(
+    "p95 süreler benzer (oran < 3x)",
+    p95Oran < 3,
+    `kilitli=${kilitli.p95.toFixed(0)}ms bilinmeyen=${bilinmeyen.p95.toFixed(0)}ms oran=${p95Oran.toFixed(2)}x`,
   );
 }
 
@@ -363,17 +398,17 @@ await sifirla(HEDEF);
 console.log("\n═══ 9. Audit çıktısında sır yok ═══");
 {
   /**
-   * Yalnız BU KOŞUDA üretilen kayıtlar denetlenir — request_id ile.
+   * Yalnız BU KOŞUDA üretilen kayıtlar denetlenir — test_run_id ile.
    * Zaman penceresi kullanılmaz: pencere hem kırılgandır (yavaş koşuda
    * kayıt dışarı taşar) hem de başka koşuların kayıtlarını yakalayabilir.
    * audit_logs append-only'dir; geçmişe dokunulmaz.
    */
   const kayitSayisi = await kosuAuditSayisi("login_failed");
-  check("Bu koşu audit kaydı üretti (request_id çalışıyor)", kayitSayisi > 0, `${kayitSayisi} kayıt`);
+  check("Bu koşu audit kaydı üretti (test_run_id çalışıyor)", kayitSayisi > 0, `${kayitSayisi} kayıt`);
 
   const { rows } = await sql.query(
     `SELECT count(*)::int AS n FROM audit_logs
-     WHERE request_id = $1
+     WHERE test_run_id = $1
        AND (changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%'
          OR changes::text ILIKE '%secret%'  OR changes::text ILIKE '%otpauth%'
          OR changes::text ILIKE '%backup%'  OR changes::text ILIKE '%token%')`,
@@ -382,19 +417,19 @@ console.log("\n═══ 9. Audit çıktısında sır yok ═══");
   check("audit_logs'ta sır izi yok (bu koşu)", rows[0].n === 0, `${rows[0].n} şüpheli kayıt`);
 
   const { rows: dg } = await sql.query(
-    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1",
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE test_run_id=$1",
     [RUN_ID],
   );
   check("Deneme günlüğü bu koşuyu kaydetti", dg[0].n > 0, `${dg[0].n} deneme`);
 
   const { rows: ip } = await sql.query(
-    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1 AND (ip_hash LIKE '%.%' OR identifier_hash LIKE '%@%')",
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE test_run_id=$1 AND (ip_hash LIKE '%.%' OR identifier_hash LIKE '%@%')",
     [RUN_ID],
   );
   check("Deneme günlüğünde ham IP/e-posta yok (yalnız hash)", ip[0].n === 0, `${ip[0].n} kayıt`);
 
   const { rows: len } = await sql.query(
-    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1 AND length(identifier_hash) <> 64",
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE test_run_id=$1 AND length(identifier_hash) <> 64",
     [RUN_ID],
   );
   check("Kimlik hash'leri sha256 uzunluğunda", len[0].n === 0);
