@@ -48,8 +48,14 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
 
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
-    // Açılışta panele odaklan
-    panelRef.current?.querySelector<HTMLElement>("button, a")?.focus();
+    /**
+     * Odak PANELİN KENDİSİNE verilir, ilk düğmeye değil.
+     * Düğmeye odaklanmak, fareyle açan kullanıcıda da kalıcı bir odak halkası
+     * bırakıyordu (altın çerçeve). Panel tabindex=-1 olduğu için odak tuzağı
+     * çalışmaya devam eder ama görünür halka çıkmaz; halka yalnız gerçek
+     * klavye gezinmesinde (Tab) belirir.
+     */
+    panelRef.current?.focus({ preventScroll: true });
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
@@ -90,7 +96,8 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
             role="dialog"
             aria-modal="true"
             aria-label="Ana menü"
-            className="absolute inset-y-0 left-0 flex w-[264px] max-w-[85vw] flex-col bg-navy-900 shadow-lg"
+            tabIndex={-1}
+            className="absolute inset-y-0 left-0 flex w-[264px] max-w-[85vw] flex-col bg-navy-900 shadow-lg outline-none"
           >
             <div className="flex items-center justify-between pr-2">
               <BrandMark />
@@ -98,7 +105,8 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Menüyü kapat"
-                className="flex h-9 w-9 items-center justify-center rounded-sm text-shell-text hover:bg-navy-800 hover:text-white"
+                /* Nötr, çerçevesiz koyu yüzey — altın yalnız focus ring'de */
+                className="flex h-9 w-9 items-center justify-center rounded-sm text-shell-muted hover:bg-navy-800 hover:text-white"
               >
                 <X size={18} strokeWidth={1.75} />
               </button>

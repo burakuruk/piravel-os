@@ -36,6 +36,20 @@
       "when": 1785081692887,
       "tag": "0004_two_factor_counters",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785091046729,
+      "tag": "0005_auth_security_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785091519404,
+      "tag": "0006_rate_limit_epoch",
+      "breakpoints": true
     }
   ]
 }

@@ -110,6 +110,14 @@ async function apiPost(page, path, body) {
 }
 
 async function oturumAc(page, { email, password, needs2fa }, setupOnly = false) {
+  /**
+   * IP rate limit sayacını temizle. Koruma KAPATILMAZ — yalnız test fixture
+   * durumu sıfırlanır; aksi hâlde art arda çekilen görüntüler gerçek limite
+   * (10sn/3 giriş, 60sn/5 TOTP) takılır. Limitin kendisi verify-lockout.mjs
+   * tarafından ayrıca sınanır.
+   */
+  await rateLimitTemizle();
+
   // fetch'in doğru origin'den çıkması için önce uygulamayı yükle
   await page.goto(`${BASE}/giris`, { waitUntil: "domcontentloaded" });
 
@@ -136,6 +144,13 @@ async function oturumAc(page, { email, password, needs2fa }, setupOnly = false) 
     anahtarlar.set(email, secret);
     await apiPost(page, "/api/auth/two-factor/verify-totp", { code: totp(secret) });
   }
+}
+
+async function rateLimitTemizle() {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+  await sql.query("DELETE FROM auth_rate_limit");
+  await sql.end();
 }
 
 /** Fixture kullanıcılarının 2FA durumunu sıfırla — script tekrar çalıştırılabilir olmalı. */

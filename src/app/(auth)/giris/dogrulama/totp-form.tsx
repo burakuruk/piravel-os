@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { OtpInput } from "@/components/ui/otp-input";
 import { authClient } from "@/lib/auth-client";
+import { MESAJ } from "@/lib/auth-messages";
 
 export function TotpForm() {
   const router = useRouter();
@@ -28,7 +29,14 @@ export function TotpForm() {
         : await authClient.twoFactor.verifyBackupCode({ code: recovery.trim() });
 
     if (res.error) {
-      setError(mode === "totp" ? "Kod geçersiz veya süresi dolmuş." : "Kurtarma kodu geçersiz.");
+      // Sayaç/kalan deneme bilgisi verilmez (C maddesi)
+      setError(
+        res.error.status === 429
+          ? MESAJ.cokFazlaDeneme
+          : mode === "totp"
+            ? MESAJ.gecersizKod
+            : MESAJ.gecersizKurtarmaKodu,
+      );
       setCode("");
       setLoading(false);
       return;

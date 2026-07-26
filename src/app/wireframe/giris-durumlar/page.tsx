@@ -56,7 +56,7 @@ export default function GirisDurumlariWireframe() {
         </Panel>
 
         <Panel label="HATA — HANGİ ALAN OLDUĞU SÖYLENMEZ">
-          <Notice tone="danger">E-posta veya şifre hatalı. 3 deneme hakkınız kaldı.</Notice>
+          <Notice tone="danger">E-posta veya şifre hatalı. Lütfen bilgilerinizi kontrol edin.</Notice>
           <TextField label="E-posta" name="e3" type="email" autoComplete="username" defaultValue={SAHTE.email} error />
           <TextField label="Şifre" name="p3" type="password" autoComplete="current-password" error trailing={<EyeToggle />} />
           <Button variant="primary" className="w-full">Giriş yap</Button>

@@ -12,7 +12,14 @@ import { redact } from "@/lib/redact";
  * redact()'ten geçirilir — savunmanın ikinci katmanı.
  */
 
-type AuthAuditAction = "login" | "login_failed" | "logout";
+type AuthAuditAction =
+  | "login"
+  | "login_failed"
+  | "logout"
+  | "login_rate_limited"
+  | "account_temporarily_locked"
+  | "login_after_lock_expired"
+  | "security_counter_reset";
 
 export interface AuthAuditInput {
   action: AuthAuditAction;
@@ -28,6 +35,10 @@ const LABELS: Record<AuthAuditAction, string> = {
   login: "Giriş yapıldı",
   login_failed: "Başarısız giriş denemesi",
   logout: "Çıkış yapıldı",
+  login_rate_limited: "Giriş hız sınırına takıldı",
+  account_temporarily_locked: "Hesap geçici olarak kilitlendi",
+  login_after_lock_expired: "Kilit süresi dolduktan sonra giriş",
+  security_counter_reset: "Güvenlik sayacı sıfırlandı",
 };
 
 export async function writeAuthAudit(input: AuthAuditInput): Promise<void> {

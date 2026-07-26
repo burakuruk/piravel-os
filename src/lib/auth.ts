@@ -7,6 +7,13 @@ import { db } from "@/db";
 import * as schema from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { writeAuthAudit } from "@/lib/auth-audit";
+import {
+  ikinciAdimOncesi,
+  ikinciAdimSonrasi,
+  parolaGirisiOncesi,
+  parolaGirisiSonrasi,
+} from "@/lib/auth-guards";
+import { parolaSifirlamaSonrasiTemizle } from "@/lib/auth-lockout";
 
 /**
  * Better Auth yapılandırması — PRD §7, docs/03 §2 (Kimlik doğrulama sınırı).
@@ -48,6 +55,8 @@ export const auth = betterAuth({
       account: schema.authAccounts,
       verification: schema.authVerifications,
       twoFactor: schema.authTwoFactors,
+      // rateLimit.modelName ile aynı anahtar olmalı
+      auth_rate_limit: schema.authRateLimit,
     },
   }),
 
@@ -63,6 +72,28 @@ export const auth = betterAuth({
     updateAge: 60 * 60,
     // Hassas işlemlerde "taze oturum" eşiği: 15 dakika
     freshAge: 60 * 15,
+  },
+
+  /**
+   * IP bazlı rate limit — hesap kilidinden BAĞIMSIZ ilk katman.
+   *
+   * Kurallar açıkça yazılır; varsayılana güvenilmez. Depo DB'dir: bellek
+   * deposu çok instance'lı üretimde her instance'ta ayrı sayar ve limiti
+   * fiilen instance sayısı kadar çarpar.
+   */
+  rateLimit: {
+    enabled: true,
+    storage: "database",
+    modelName: "auth_rate_limit",
+    window: 60,
+    max: 60,
+    customRules: {
+      "/sign-in/email": { window: 10, max: 3 },
+      "/forget-password": { window: 60, max: 3 },
+      "/reset-password": { window: 60, max: 3 },
+      "/two-factor/verify-totp": { window: 60, max: 5 },
+      "/two-factor/verify-backup-code": { window: 60, max: 5 },
+    },
   },
 
   advanced: {
@@ -83,55 +114,88 @@ export const auth = betterAuth({
    * yazılır (docs/02 §6). Sır içeren gövde ASLA kaydedilmez.
    */
   hooks: {
-    /**
-     * Çıkış audit'i BEFORE kancasında yazılır: after çalıştığında oturum
-     * silinmiş olur ve kullanıcının kim olduğu artık bilinemez.
-     */
     before: createAuthMiddleware(async (ctx) => {
-      if (!ctx.path.startsWith("/sign-out")) return;
-      const session = await auth.api
-        .getSession({ headers: ctx.headers ?? new Headers() })
-        .catch(() => null);
-      if (session?.user) {
-        await writeAuthAudit({
-          action: "logout",
-          actorId: session.user.id,
-          actorEmail: session.user.email,
-          ipAddress: ctx.headers?.get("x-forwarded-for") ?? null,
-          userAgent: ctx.headers?.get("user-agent") ?? null,
-        });
+      const path = ctx.path;
+
+      // Parola girişi: hesap kilitliyse akış hiç başlamaz
+      if (path.startsWith("/sign-in/email")) {
+        const email = (ctx.body as { email?: string } | undefined)?.email ?? "";
+        await parolaGirisiOncesi(email, ctx.headers);
+        return;
+      }
+
+      // İkinci adım: TOTP/kurtarma kodu kilidi
+      if (path.startsWith("/two-factor/verify")) {
+        const session = await auth.api
+          .getSession({ headers: ctx.headers ?? new Headers() })
+          .catch(() => null);
+        await ikinciAdimOncesi(session?.user?.id ?? null, ctx.headers);
+        return;
+      }
+
+      /**
+       * Çıkış audit'i BEFORE'da yazılır: after çalıştığında oturum silinmiş
+       * olur ve kimin çıktığı artık bilinemez.
+       */
+      if (path.startsWith("/sign-out")) {
+        const session = await auth.api
+          .getSession({ headers: ctx.headers ?? new Headers() })
+          .catch(() => null);
+        if (session?.user) {
+          await writeAuthAudit({
+            action: "logout",
+            actorId: session.user.id,
+            actorEmail: session.user.email,
+            ipAddress: ctx.headers?.get("x-forwarded-for") ?? null,
+            userAgent: ctx.headers?.get("user-agent") ?? null,
+          });
+        }
       }
     }),
 
     after: createAuthMiddleware(async (ctx) => {
       const path = ctx.path;
-      const ip = ctx.headers?.get("x-forwarded-for") ?? null;
-      const ua = ctx.headers?.get("user-agent") ?? null;
 
-      if (path.startsWith("/sign-in")) {
+      if (path.startsWith("/sign-in/email")) {
+        const email = (ctx.body as { email?: string } | undefined)?.email ?? "";
         const user = ctx.context.newSession?.user;
-        if (user) {
+        // 2FA'lı hesapta oturum henüz açılmaz ama PAROLA doğrudur:
+        // twoFactorRedirect yanıtı başarı sayılır.
+        const iki = (ctx.context.returned as { twoFactorRedirect?: boolean } | undefined)
+          ?.twoFactorRedirect;
+        const basarili = Boolean(user) || Boolean(iki);
+        await parolaGirisiSonrasi(email, basarili, user?.id ?? null, ctx.headers);
+        return;
+      }
+
+      if (path.startsWith("/two-factor/verify")) {
+        const user = ctx.context.newSession?.user;
+        const tur = path.includes("backup-code") ? "recovery_code" : "totp";
+        await ikinciAdimSonrasi(
+          user?.id ?? ctx.context.session?.user?.id ?? null,
+          user?.email ?? "",
+          tur,
+          Boolean(user),
+          ctx.headers,
+        );
+        return;
+      }
+
+      // Parola sıfırlandıysa parola kilidi ve sayacı temizlenir
+      if (path.startsWith("/reset-password")) {
+        const session = await auth.api
+          .getSession({ headers: ctx.headers ?? new Headers() })
+          .catch(() => null);
+        if (session?.user) {
+          await parolaSifirlamaSonrasiTemizle(session.user.id);
           await writeAuthAudit({
-            action: "login",
-            actorId: user.id,
-            actorEmail: user.email,
-            ipAddress: ip,
-            userAgent: ua,
-          });
-        } else {
-          // Oturum açılmadıysa kimlik bilgileri hatalıdır.
-          // E-posta kaydedilir (kime denendiği önemlidir), parola ASLA.
-          const email = (ctx.body as { email?: string } | undefined)?.email ?? null;
-          await writeAuthAudit({
-            action: "login_failed",
-            actorEmail: email,
-            ipAddress: ip,
-            userAgent: ua,
+            action: "security_counter_reset",
+            actorId: session.user.id,
+            actorEmail: session.user.email,
+            context: { sayac: "giris", neden: "sifirlama" },
           });
         }
       }
-
-      // Çıkış audit'i before kancasında yazılır (yukarı bakınız).
     }),
   },
 

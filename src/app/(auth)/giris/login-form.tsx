@@ -4,6 +4,7 @@ import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import { MESAJ } from "@/lib/auth-messages";
 
 /**
  * Giriş formu — 06 §16.1 (onaylı wireframe).
@@ -37,8 +38,12 @@ export function LoginForm() {
     const { data, error: err } = await authClient.signIn.email({ email, password });
 
     if (err) {
-      // Hangi alanın yanlış olduğu SÖYLENMEZ (kullanıcı numaralandırma engeli)
-      setError("E-posta veya şifre hatalı.");
+      /**
+       * Mesajlar SABİTTİR: hangi alanın yanlış olduğu, hesabın var olup
+       * olmadığı veya kaç deneme kaldığı ASLA söylenmez. Sayaç göstermek,
+       * saldırgana eşiği ve ilerlemesini bildirir.
+       */
+      setError(err.status === 429 ? MESAJ.cokFazlaDeneme : MESAJ.gecersizKimlik);
       setLoading(false);
       return;
     }

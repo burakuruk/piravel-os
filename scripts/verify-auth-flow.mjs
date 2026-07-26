@@ -49,8 +49,17 @@ function totp(base32Secret, at = Date.now()) {
   return String(code % 1_000_000).padStart(6, "0");
 }
 
-/** Çerez taşıyan basit istemci. */
+/**
+ * Çerez taşıyan basit istemci.
+ *
+ * Her istemci AYRI bir X-Forwarded-For kullanır: IP bazlı rate limit bu
+ * dosyanın konusu değildir (verify-lockout.mjs sınar). Tek IP kullanılsaydı
+ * fonksiyonel testler kendi aralarında limite takılırdı.
+ */
+let ipSayac = 0;
 function client() {
+  ipSayac += 1;
+  const ip = `192.0.2.${(ipSayac % 250) + 1}`;
   let cookies = "";
   return {
     get cookies() {
@@ -63,6 +72,7 @@ function client() {
           "Content-Type": "application/json",
           // Better Auth CSRF koruması Origin bekler (tarayıcı davranışı)
           origin: BASE,
+          "x-forwarded-for": ip,
           ...(cookies ? { cookie: cookies } : {}),
         },
         body: JSON.stringify(body ?? {}),
@@ -88,7 +98,7 @@ function client() {
     },
     async get(path) {
       const res = await fetch(`${BASE}${path}`, {
-        headers: { origin: BASE, ...(cookies ? { cookie: cookies } : {}) },
+        headers: { origin: BASE, "x-forwarded-for": ip, ...(cookies ? { cookie: cookies } : {}) },
         redirect: "manual",
       });
       return { status: res.status, location: res.headers.get("location") };
@@ -125,7 +135,10 @@ await sql.query("UPDATE auth_user SET two_factor_enabled = false WHERE email = A
   FIXTURE_MAILS,
 ]);
 await sql.query("UPDATE users SET totp_enabled_at = NULL WHERE email = ANY($1)", [FIXTURE_MAILS]);
-console.log("· Fixture kullanıcılarının 2FA durumu sıfırlandı (tekrarlanabilirlik)\n");
+// IP rate limit sayacı temizlenir — koruma kapatılmaz, yalnız fixture
+// sıfırlanır. Limitin kendisi verify-lockout.mjs ile sınanır.
+await sql.query("DELETE FROM auth_rate_limit");
+console.log("· Fixture 2FA ve rate-limit durumu sıfırlandı (tekrarlanabilirlik)\n");
 
 console.log("═══ 1. Giriş / çıkış / oturum / audit ═══");
 {
@@ -282,10 +295,14 @@ console.log("\n═══ 8. Sır sızıntısı kontrolü ═══");
   );
   check("audit_logs'ta 2FA sır izi yok", rows[0].n === 0, `${rows[0].n} şüpheli kayıt`);
 
+  // Yalnız bu koşu denetlenir: audit_logs append-only'dir, geçmiş
+  // geliştirme kayıtları silinemez (ve silinmemelidir).
   const { rows: pw } = await sql.query(
-    "SELECT count(*)::int AS n FROM audit_logs WHERE changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%'",
+    `SELECT count(*)::int AS n FROM audit_logs
+     WHERE created_at > now() - interval '10 minutes'
+       AND (changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%')`,
   );
-  check("audit_logs'ta parola izi yok", pw[0].n === 0, `${pw[0].n} şüpheli kayıt`);
+  check("audit_logs'ta parola izi yok (bu koşu)", pw[0].n === 0, `${pw[0].n} şüpheli kayıt`);
 }
 
 await sql.end();

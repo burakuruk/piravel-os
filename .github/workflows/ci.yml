@@ -70,3 +70,28 @@ jobs:
 
       - name: Production build
         run: npm run build
+
+      # ── Uçtan uca kimlik doğrulama ve giriş güvenliği ──
+      # Gerçek HTTP istekleriyle çalışır; production sunucusu ayağa kaldırılır.
+      - name: Test kullanıcılarını oluştur
+        env:
+          ADMIN_PASSWORD: gelistirme-test-parolasi
+        run: |
+          npm run seed:admin -- --email admin@example.com --name "Test Yonetici"
+          npm run seed:admin -- --email finance@example.com --name "Test finance" --role finance
+          npm run seed:admin -- --email operations@example.com --name "Test operations" --role operations
+          npm run seed:admin -- --email member@example.com --name "Test member" --role member
+
+      - name: Uygulamayı başlat
+        run: npm run start &
+        env:
+          BETTER_AUTH_URL: http://localhost:3000
+
+      - name: Sunucunun hazır olmasını bekle
+        run: npx --yes wait-on http://localhost:3000/giris --timeout 60000
+
+      - name: Kimlik doğrulama akışı (28 kontrol)
+        run: npm run verify:auth
+
+      - name: Giriş güvenliği — rate limit ve hesap kilidi (28 kontrol)
+        run: npm run verify:lockout

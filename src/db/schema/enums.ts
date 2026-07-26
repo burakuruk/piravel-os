@@ -76,6 +76,11 @@ export const auditAction = pgEnum("audit_action", [
   "login",
   "login_failed",
   "logout",
+  // Giriş güvenliği olayları
+  "login_rate_limited",
+  "account_temporarily_locked",
+  "login_after_lock_expired",
+  "security_counter_reset",
   "export",
   "download",
   "view_sensitive",
