@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { LogOut } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@/lib/auth-policy";
 import { navGroupsFor } from "./nav-items";
@@ -63,11 +66,38 @@ export function BrandMark({ className }: { className?: string }) {
   );
 }
 
+/**
+ * Kullanıcı bloğu + çıkış (06 §8).
+ * Çıkış nötr bir ikon düğmesidir; altın kullanılmaz (yalnız focus ring'de).
+ */
 export function UserBlock({ fullName, roleLabel }: { fullName: string; roleLabel: string }) {
+  const router = useRouter();
+  const [cikiliyor, setCikiliyor] = useState(false);
+
+  async function cikisYap() {
+    setCikiliyor(true);
+    await authClient.signOut();
+    // replace: geri tuşuyla oturumlu sayfaya dönülmesin
+    router.replace("/giris");
+    router.refresh();
+  }
+
   return (
-    <div className="border-t border-shell-divider px-5 py-3">
-      <div className="text-sm text-white">{fullName}</div>
-      <div className="text-xs text-shell-muted">{roleLabel}</div>
+    <div className="flex items-center gap-2 border-t border-shell-divider px-5 py-3">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm text-white">{fullName}</div>
+        <div className="truncate text-xs text-shell-muted">{roleLabel}</div>
+      </div>
+      <button
+        type="button"
+        onClick={cikisYap}
+        disabled={cikiliyor}
+        aria-label="Çıkış yap"
+        title="Çıkış yap"
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm text-shell-muted transition-colors hover:bg-navy-800 hover:text-white disabled:opacity-50"
+      >
+        <LogOut size={16} strokeWidth={1.75} />
+      </button>
     </div>
   );
 }
