@@ -1,16 +1,26 @@
 "use client";
 
-import { Bell, Search } from "lucide-react";
+import { Bell, Menu, Search } from "lucide-react";
 
 /**
  * Topbar (06 §8): 56px, beyaz, altta 1px çizgi.
- * Breadcrumb + global arama (⌘K — Sprint 1'de API'ye bağlanır, rol+kapsam
- * filtresi API seviyesindedir) + bildirim zili.
+ * Masaüstü : breadcrumb + global arama (⌘K) + bildirim zili
+ * Mobil    : [hamburger] — sağda [arama] [bildirim]
+ *            Breadcrumb gösterilmez; büyük sayfa başlığı zaten içerikte.
+ *            Hamburger, navigasyon drawer'ını açar (Sprint 1).
  */
 export function Topbar({ breadcrumb = "Genel Bakış" }: { breadcrumb?: string }) {
   return (
-    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-line-200 bg-surface px-6">
-      <div className="text-sm text-ink-600">{breadcrumb}</div>
+    <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-line-200 bg-surface px-6 max-md:px-4">
+      {/* Mobil: hamburger (drawer Sprint 1'de bağlanır) */}
+      <button
+        type="button"
+        className="hidden h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100 max-lg:flex"
+        aria-label="Menüyü aç"
+      >
+        <Menu size={19} strokeWidth={1.75} />
+      </button>
+      <div className="text-sm text-ink-600 max-lg:hidden">{breadcrumb}</div>
       <div className="flex items-center gap-3">
         <button
           type="button"

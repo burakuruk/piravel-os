@@ -64,6 +64,7 @@ En riskli kısım en önce: para modeli yanlışsa her şey çöker.
 | Kullanıcı yönetimi | users CRUD (SA), oturum listesi/iptal, audit köprüsü (login/logout/failed) |
 | Uygulama kabuğu | Layout, navigasyon, oturum durumu, TR yerelleştirme altyapısı |
 | **Navigasyon sistemi** | 06 §8'e göre sidebar/topbar'ın nihai görsel hali; aktif durum (altın vurgu), daraltma davranışı |
+| **Mobil navigasyon drawer'ı** | Lacivert overlay drawer; **rol bazlı menü filtresi** (görülmeyen modül hiç render edilmez); aktif menüde altın gösterge; dışarı tıklama + Escape ile kapanma; odak tuzağı ve klavye kontrolü (06 §15). Topbar hamburger'ı bu drawer'a bağlanır |
 | **Login/2FA ekranları** | 06 §16.1 wireframe'ine göre; marka kimliğinin ilk uygulanışı |
 | **Bileşen görsel standardı** | Buton, form, tablo, badge temel bileşenlerinin Piravel görünümüyle Storybook'suz basit bir `/styleguide` sayfasında sabitlenmesi |
 
@@ -165,6 +166,7 @@ MVP'nin kalbi — 2. bölüm. En yoğun test sprint'i.
 | Bildirim merkezi | Panel içi liste, okundu, `action_url` yönlendirmeleri |
 | E-posta | Günlük özet şablonu (yaklaşan/geciken tahsilat-ödeme-sözleşme) |
 | **Dashboard** | Tüm kartlar: beklenen/tahsil edilen/gecikmiş (yaş gruplu)/gider/net nakit/toplam bakiye/yaklaşanlar/süresi dolacak sözleşmeler/geciken işler; rol bazlı bölümler |
+| **Grafik placeholder'ının kaldırılması** | Sprint 0'daki kesikli çerçeveli yer tutucu **silinir**; yerine gerçek Recharts grafiği gelir ve 06 §12'deki düşük doygunluklu finans kurallarına uyar (ana seri `--navy-700`, alan dolgusu %6, gradient/glow/3D yok, yatay ızgara) |
 | Tasks modülü | Basit iş takibi CRUD + MEM kısıtlı güncelleme + geciken işler |
 
 **Testler:** job'ın gün içi ikinci çalıştırmada bildirim üretmemesi (dedupe); dashboard agregasyonlarının test verisiyle birebir doğruluğu; OPS/MEM dashboard yanıtında finans alanının hiç olmaması.

@@ -2,6 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { cn } from "@/lib/utils";
+
+/** Placeholder işaretleri yalnız geliştirmede görünür; gerçek veri bağlanınca kalkar. */
+const isDev = process.env.NODE_ENV === "development";
 
 /**
  * Dashboard — DÜŞÜK DETAYLI TASLAK WIREFRAME (Sprint 0 çıktısı, 06 §16.2).
@@ -45,20 +49,31 @@ export default function DashboardPage() {
             <div className="mt-2 h-px w-10 bg-gold-500" />
           </div>
 
-          {/* Metrik şeridi — kart değil, çizgiyle ayrılmış sade sayılar */}
+          {/* Metrik şeridi — kart değil, çizgiyle ayrılmış sade sayılar.
+              Mobilde 2×2 ve kompakt: dikey padding düşer, satır boşluğu yerine
+              hafif yatay ayraç kullanılır. Tutar boyutu korunur. */}
           <Card className="mb-6">
-            <div className="grid grid-cols-4 divide-x divide-line-200 max-md:grid-cols-2 max-md:gap-y-4 max-md:divide-x-0">
-              {metrics.map((m) => (
-                <div key={m.label} className="px-5 py-4">
+            <div className="grid grid-cols-4 divide-x divide-line-200 max-md:grid-cols-2 max-md:divide-x-0">
+              {metrics.map((m, i) => (
+                <div
+                  key={m.label}
+                  className={cn(
+                    "px-5 py-4 max-md:px-4 max-md:py-2.5",
+                    i >= 2 && "max-md:border-t max-md:border-line-200",
+                  )}
+                >
                   <div className="text-xs font-medium tracking-wide text-ink-600">{m.label}</div>
                   {/* Tutarlar asla satır sarmaz (06 §10) */}
                   <div
-                    className={`mt-1 whitespace-nowrap text-[22px] leading-7 font-semibold tnum max-md:text-[19px] ${m.tone}`}
+                    className={cn(
+                      "mt-1 whitespace-nowrap text-[22px] leading-7 font-semibold tnum max-md:text-[19px]",
+                      m.tone,
+                    )}
                     data-amount
                   >
                     {m.value}
                   </div>
-                  <div className="mt-0.5 text-xs text-ink-400">örnek veri</div>
+                  {isDev && <div className="mt-0.5 text-xs text-ink-400">örnek veri</div>}
                 </div>
               ))}
             </div>

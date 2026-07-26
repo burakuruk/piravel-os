@@ -17,11 +17,19 @@ mkdirSync(outDir, { recursive: true });
 
 const BASE = process.env.PREVIEW_URL ?? "http://localhost:3000";
 
+/** clip: sabit kırpma · section: n. bölümü (tam ekran adım) yakala */
 const shots = [
-  { file: "01-kabuk-1440x900.png", w: 1440, h: 900, clip: "shell" },
-  { file: "02-dashboard-1440x900.png", w: 1440, h: 900 },
-  { file: "03-dashboard-1280.png", w: 1280, h: 860 },
-  { file: "04-dashboard-mobil-375x812.png", w: 375, h: 812 },
+  { file: "01-kabuk-1440x900.png", path: "/", w: 1440, h: 900, clip: { x: 0, y: 0, width: 760, height: 900 } },
+  { file: "02-dashboard-1440x900.png", path: "/", w: 1440, h: 900 },
+  { file: "03-dashboard-1280.png", path: "/", w: 1280, h: 860 },
+  { file: "04-dashboard-mobil-375x812.png", path: "/", w: 375, h: 812 },
+
+  // Login / 2FA wireframe — her adım kendi tam ekranı
+  { file: "05-giris-1440x900.png", path: "/wireframe/giris", w: 1440, h: 900, section: 0 },
+  { file: "06-giris-hata-1440x900.png", path: "/wireframe/giris", w: 1440, h: 900, section: 1 },
+  { file: "07-2fa-dogrulama-1440x900.png", path: "/wireframe/giris", w: 1440, h: 900, section: 2 },
+  { file: "08-2fa-kurulum-1440x900.png", path: "/wireframe/giris", w: 1440, h: 1100, section: 3 },
+  { file: "09-giris-mobil-375x812.png", path: "/wireframe/giris", w: 375, h: 812, section: 0 },
 ];
 
 const browser = await chromium.launch();
@@ -32,17 +40,19 @@ try {
       deviceScaleFactor: 2, // retina netliği
       locale: "tr-TR",
     });
-    await page.goto(BASE, { waitUntil: "networkidle" });
+    await page.goto(BASE + shot.path, { waitUntil: "networkidle" });
     await page.evaluateHandle("document.fonts.ready");
 
-    if (shot.clip === "shell") {
-      // Uygulama kabuğu: sidebar + topbar odaklı kırpma (sol 760px)
-      await page.screenshot({
-        path: join(outDir, shot.file),
-        clip: { x: 0, y: 0, width: 760, height: shot.h },
-      });
+    const opts = { path: join(outDir, shot.file) };
+    if (shot.clip) {
+      await page.screenshot({ ...opts, clip: shot.clip });
+    } else if (shot.section !== undefined) {
+      // Wireframe sayfasındaki n. tam-ekran bölümü yakala
+      const y = shot.section * shot.h;
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      await page.screenshot(opts);
     } else {
-      await page.screenshot({ path: join(outDir, shot.file), fullPage: false });
+      await page.screenshot(opts);
     }
     console.log(`✓ ${shot.file}  (${shot.w}×${shot.h})`);
     await page.close();
