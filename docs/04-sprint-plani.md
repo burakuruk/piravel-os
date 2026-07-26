@@ -65,7 +65,10 @@ En riskli kısım en önce: para modeli yanlışsa her şey çöker.
 | Uygulama kabuğu | Layout, navigasyon, oturum durumu, TR yerelleştirme altyapısı |
 | **Navigasyon sistemi** | 06 §8'e göre sidebar/topbar'ın nihai görsel hali; aktif durum (altın vurgu), daraltma davranışı |
 | **Mobil navigasyon drawer'ı** | Lacivert overlay drawer; **rol bazlı menü filtresi** (görülmeyen modül hiç render edilmez); aktif menüde altın gösterge; dışarı tıklama + Escape ile kapanma; odak tuzağı ve klavye kontrolü (06 §15). Topbar hamburger'ı bu drawer'a bağlanır |
-| **Login/2FA ekranları** | 06 §16.1 wireframe'ine göre; marka kimliğinin ilk uygulanışı |
+| **Login/2FA ekranları** | 06 §16.1 wireframe'ine göre (onaylı); giriş formu gereksinimleri: göster/gizle, Caps Lock uyarısı, loading, autocomplete, Enter ile gönderim |
+| **OTP input bileşeni** | Görsel 6 kutu / teknik tek alan: toplu yapıştırma, `one-time-code`, `inputmode=numeric`, backspace geri atlama, `role="group"` + aria etiketleri (06 §16.1 davranış sözleşmesi) |
+| **Kurtarma kodu akışı** | Kopyala **veya** indir → onay kutusu → SA/FIN için rastgele kod doğrulaması; kodlar Argon2id ile hash'lenir, bir daha gösterilmez, yenileme eskileri iptal eder |
+| **Sır sızıntısı koruması** | `redact()` yardımcısı + Sentry `beforeSend` temizliği; TOTP secret / QR URI / kurtarma kodları log, Sentry, analytics, audit ve ekran görüntüsü otomasyonuna **girmez** (PRD §6.3) |
 | **Bileşen görsel standardı** | Buton, form, tablo, badge temel bileşenlerinin Piravel görünümüyle Storybook'suz basit bir `/styleguide` sayfasında sabitlenmesi |
 
 **Testler:**

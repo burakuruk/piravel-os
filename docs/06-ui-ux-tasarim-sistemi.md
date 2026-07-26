@@ -362,10 +362,58 @@ Mobilde birincil aksiyonlar korunur (tahsilat kaydı girilebilir); eşleştirme 
 Ortak format — **Amaç · Hiyerarşi · Üst · İçerik · 1° aksiyon · 2° aksiyon · Tablo/kart · Mobil · Hata/boş**
 
 ### 16.1 Giriş ve 2FA
+
 - **Amaç:** hızlı, güven veren giriş. **Hiyerarşi:** logo → form → yardım.
-- **Üst:** yok (kabuksuz). **İçerik:** tam ekran lacivert zemin; ortada 400px beyaz kart: altın logo, e-posta, şifre, "Giriş". 2FA adımı aynı kartta: 6 haneli TOTP inputu (otomatik ilerleyen kutular), "kurtarma kodu kullan" bağlantısı. Zorunlu 2FA kurulumu: QR + doğrulama + kurtarma kodlarını **indirtmeden geçirmeyen** akış.
-- **1°:** Giriş / Doğrula. **2°:** şifre sıfırlama. **Tablo/kart:** tek kart. **Mobil:** aynı, tam genişlik.
-- **Hata:** kart içi tek satır ("E-posta veya şifre hatalı" — hangisi olduğu söylenmez); 5 denemede geçici kilit mesajı.
+- **Üst:** yok (kabuksuz). **İçerik:** tam ekran lacivert zemin; ortada 400px beyaz kart; altın yalnızca logoda.
+- **1°:** Giriş / Doğrula. **2°:** şifre sıfırlama. **Mobil:** aynı, tam genişlik.
+
+#### Akış ve adım göstergesi
+
+2FA **her kullanıcı için zorunlu değildir** (SA/FIN zorunlu, OPS/MEM opsiyonel). Bu yüzden:
+
+- **Giriş ekranında adım göstergesi YOKTUR** — "ADIM 1 / 2" gibi bir vaat verilmez.
+- Kimlik bilgileri doğrulandıktan **sonra** 2FA gerekiyorsa ikinci ekran açılır ve başlığı **"Güvenlik doğrulaması"**, göstergesi **"2. ADIM"** olur.
+
+#### Giriş formu gereksinimleri
+
+| Gereksinim | Detay |
+|---|---|
+| Autocomplete | E-posta `autocomplete="username"`, şifre `autocomplete="current-password"` — parola yöneticisi uyumu |
+| Şifre göster/gizle | Alan içinde sağda göz düğmesi; `aria-pressed` + değişen `aria-label` |
+| Caps Lock uyarısı | Şifre alanı odaktayken Caps Lock açıksa alan altında amber satır, `role="status"` |
+| Gönderim | Enter ile gönderilir |
+| Yükleniyor | Buton içinde spinner + "Giriş yapılıyor…"; işlem sırasında alanlar kilitlenir |
+| Hata | Kart üstünde tek satır: "E-posta veya şifre hatalı" — **hangisinin yanlış olduğu söylenmez** (kullanıcı numaralandırma engeli). Kalan deneme sayısı gösterilir; 5. denemede geçici kilit |
+
+#### TOTP girişi — davranış sözleşmesi
+
+Görsel olarak 6 kutu, **teknik olarak tek erişilebilir alan** gibi davranır:
+
+| Davranış | Uygulama |
+|---|---|
+| Toplu yapıştırma | 6 haneli kod tek `paste` ile kutulara dağıtılır |
+| Otomatik doldurma | İlk alanda `autocomplete="one-time-code"` → iOS/Android SMS-TOTP autofill |
+| Mobil klavye | `inputmode="numeric"` + `pattern="[0-9]*"` → rakam tuş takımı |
+| Backspace | Dolu kutuda siler; **boş kutuda bir öncekine atlar ve onu siler** |
+| İleri gitme | Rakam girilince otomatik sonraki kutuya |
+| Ekran okuyucu | `role="group"` + `aria-label="6 haneli doğrulama kodu"`; her kutuda `aria-label="n. hane"` |
+| Odak | Aktif kutuda 2px lacivert halka |
+
+#### Zorunlu 2FA kurulumu — iki adım
+
+**1/2 — Uygulamayı bağlama**
+- QR alanı masaüstünde **150×150px** (kabul aralığı 140–160)
+- Yanında: elle giriş anahtarı (mono font), **"Anahtarı kopyala"**, **"QR kodu yenile"**
+- Amber uyarı: *"Bu anahtarı kimseyle paylaşmayın. Piravel OS ekibi dahil hiç kimse sizden bu anahtarı istemez."*
+- Altında TOTP alanı ile doğrulama
+- **Mobil:** QR **üstte ortalanmış**, açıklama ve düğmeler **altında**
+
+**2/2 — Kurtarma kodları** (üç kapı, üçü de geçilmeden tamamlanamaz)
+1. Kullanıcı **"Kodları kopyala" VEYA "Dosya olarak indir"** işlemlerinden **en az birini** yapar (yalnız indirme zorunlu değildir)
+2. **"Kurtarma kodlarını güvenli bir yere kaydettim"** onayını verir
+3. **SA ve FIN rolleri için:** rastgele seçilen bir kurtarma kodu (örn. "3. kodu girin") tekrar girilir
+- Kodlar masaüstünde 2 kolon, **mobilde tek kolon**
+- Kart altında kalıcı not: *"Bu kodlar bir daha gösterilmez. Yeni kod üretilirse eskiler geçersiz olur."*
 
 ### 16.2 Ana dashboard
 - **Amaç:** "Şirketin bugünkü durumu nedir?" — 5 saniyede cevap. **Hiyerarşi:** metrikler → dikkat isteyenler → eğilim.

@@ -252,6 +252,24 @@ Operasyon ve Ekip Üyesi rollerinde finans kartları **hiç render edilmez** (sa
 | Yedek | Günlük otomatik DB yedeği + **aylık geri yükleme testi** |
 | Şifre kasası | **Yok.** Harici parola yöneticisi kullanılır |
 
+#### 2FA sırlarının ele alınması — pazarlıksız kurallar
+
+TOTP secret, QR içeriği (`otpauth://` URI) ve kurtarma kodları **en yüksek hassasiyetteki verilerdir**. Aşağıdakiler ihlal kabul edilir:
+
+| Kural | Gerekçe |
+|---|---|
+| **Loglara yazılmaz** — uygulama logu, erişim logu, DB sorgu logu dahil | Log dosyaları çoğu ihlalde ilk sızan yerdir |
+| **Sentry'ye gönderilmez** — hata mesajı, breadcrumb, extra context veya request gövdesinde | Hata izleme servisi üçüncü taraftır |
+| **Analytics'e gönderilmez** — hiçbir olay, özellik veya sayfa parametresinde | — |
+| **Ekran görüntüsü otomasyonuna girmez** — `scripts/screenshots.mjs` ve benzeri araçlar yalnız sahte/placeholder değer görür | Görseller repoda commit edilir |
+| **`audit_logs`'a yazılmaz** — 2FA kurulumu olay olarak kaydedilir, **sırrın kendisi asla** | Audit log kalıcı ve silinemezdir |
+| **Kurtarma kodları hash'li saklanır** (Argon2id), düz metin tutulmaz | Şifreyle aynı hassasiyet |
+| **Kurulumdan sonra yeniden açık gösterilmez** — yalnız üretim anında bir kez | Ekranda kalan sır ekran paylaşımında sızar |
+| **Yenilenirse eski kodlar geçersiz olur** — tamamı iptal, tek işlemde | Kısmi geçerlilik kafa karışıklığı ve açık bırakır |
+| TOTP secret DB'de **şifreli** saklanır (`users.totp_secret`) | Veritabanı yedeği sızsa bile kullanılamaz |
+
+Uygulamada: sır taşıyan alanlar için ortak bir `redact()` yardımcı fonksiyonu kullanılır ve Sentry `beforeSend` kancasında bu alanlar temizlenir. Bu, Sprint 1'in kabul kriterlerindendir.
+
 ### 6.4 Performans ve ölçek
 
 Gerçekçi hedef ölçek (3 yıl sonrası tahmini):
