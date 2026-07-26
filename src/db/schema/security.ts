@@ -31,9 +31,19 @@ export const authSecurityState = pgTable("auth_security_state", {
   passwordFailedCount: integer("password_failed_count").notNull().default(0),
   passwordWindowStartedAt: timestamp("password_window_started_at", { withTimezone: true }),
   passwordLockedUntil: timestamp("password_locked_until", { withTimezone: true }),
-  /** Aynı gün kaçıncı kilit — ikincisi daha uzun sürer */
+
+  /**
+   * Kilit yükseltmesi — "aynı gün ikinci eşik daha uzun kilitler" kuralının
+   * veri modeli. İkisi birlikte anlam taşır:
+   *   · passwordLockCountDate : sayacın ait olduğu takvim günü
+   *   · passwordLockCountToday: o gün uygulanan kilit sayısı
+   *
+   * Gün değiştiğinde sayaç 1'e döner, yani seviye kendiliğinden sıfırlanır;
+   * ayrı bir temizlik işine gerek yoktur.
+   *   1. kilit → 15 dk · aynı gün 2. kilit → 60 dk · ertesi gün → yine 15 dk
+   */
   passwordLockCountToday: integer("password_lock_count_today").notNull().default(0),
-  passwordLockDay: date("password_lock_day"),
+  passwordLockCountDate: date("password_lock_count_date"),
 
   // ── TOTP / kurtarma kodu denemeleri (parola sayacından AYRI) ──
   totpFailedCount: integer("totp_failed_count").notNull().default(0),

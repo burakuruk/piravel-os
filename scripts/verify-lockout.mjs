@@ -21,6 +21,15 @@ const BASE = process.env.PREVIEW_URL ?? "http://localhost:3000";
 const PAROLA = "gelistirme-test-parolasi";
 const HEDEF = "member@example.com";
 
+/**
+ * Bu koşuya özgü kimlik. Her istekte x-request-id olarak gönderilir; sunucu
+ * audit_logs.request_id ve auth_login_attempts.request_id alanlarına yazar.
+ *
+ * Testler YALNIZCA kendi ürettikleri kayıtları sorgular — zaman penceresine
+ * dayanmak yerine. audit_logs append-only'dir; geçmişe dokunulmaz.
+ */
+const RUN_ID = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const results = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok });
@@ -50,12 +59,14 @@ function yeniIp() {
 }
 
 async function girisDene(email, password, ip = yeniIp()) {
+  const basladi = performance.now();
   const res = await fetch(`${BASE}/api/auth/sign-in/email`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       origin: BASE,
       "x-forwarded-for": ip,
+      "x-request-id": RUN_ID,
     },
     body: JSON.stringify({ email, password }),
     redirect: "manual",
@@ -66,7 +77,21 @@ async function girisDene(email, password, ip = yeniIp()) {
   } catch {
     /* gövdesiz */
   }
-  return { status: res.status, retryAfter: res.headers.get("retry-after"), json };
+  return {
+    status: res.status,
+    retryAfter: res.headers.get("retry-after"),
+    json,
+    sureMs: performance.now() - basladi,
+  };
+}
+
+/** Bu koşuda üretilen audit kayıtlarını sayar (zaman penceresi kullanmaz). */
+async function kosuAuditSayisi(action) {
+  const { rows } = await sql.query(
+    "SELECT count(*)::int AS n FROM audit_logs WHERE request_id=$1 AND action=$2",
+    [RUN_ID, action],
+  );
+  return rows[0].n;
 }
 
 async function durum(email) {
@@ -78,41 +103,79 @@ async function durum(email) {
   return rows[0] ?? null;
 }
 
-async function auditSayisi(action, email) {
-  const { rows } = await sql.query(
-    "SELECT count(*)::int AS n FROM audit_logs WHERE action=$1 AND actor_email=$2",
-    [action, email],
-  );
-  return rows[0].n;
-}
 
 // ═══════════════════════════════════════════════════════════════
 console.log("═══ 1. Beşinci hatalı parola sonrası geçici kilit ═══");
 await sifirla(HEDEF);
 {
-  const kilitOnce = await auditSayisi("account_temporarily_locked", HEDEF);
   for (let i = 1; i <= 5; i++) {
     await girisDene(HEDEF, "kesinlikle-yanlis-parola");
   }
   const st = await durum(HEDEF);
   check("5 başarısız deneme sayacı doğru", st?.password_failed_count === 5, `sayaç=${st?.password_failed_count}`);
   check("Hesap kilitlendi", st?.password_locked_until !== null && new Date(st.password_locked_until) > new Date());
-  check(
-    "Kilit audit'e yazıldı",
-    (await auditSayisi("account_temporarily_locked", HEDEF)) === kilitOnce + 1,
-  );
+  check("Kilit audit'e yazıldı (bu koşu)", (await kosuAuditSayisi("account_temporarily_locked")) >= 1);
 }
 
-console.log("\n═══ 2. Kilit süresinde DOĞRU parola bile reddedilir ═══");
+console.log("\n═══ 2. Kilitliyken: parola doğruysa 429, yanlışsa 401 ═══");
 {
-  const res = await girisDene(HEDEF, PAROLA);
-  check("Doğru parola reddedildi", res.status !== 200, `HTTP ${res.status}`);
-  check("429 döndü", res.status === 429, `HTTP ${res.status}`);
-  check("Retry-After başlığı var", Boolean(res.retryAfter), `${res.retryAfter}s`);
+  // Parola DOĞRU + hesap kilitli → gerçek durum bildirilir
+  const dogru = await girisDene(HEDEF, PAROLA);
+  check("Doğru parola + kilit → 429", dogru.status === 429, `HTTP ${dogru.status}`);
+  check("Retry-After başlığı var", Boolean(dogru.retryAfter), `${dogru.retryAfter}s`);
   check(
     "Mesaj sayaç sızdırmıyor",
-    !/\d+\s*deneme|kaldı/i.test(res.json?.message ?? ""),
-    res.json?.message ?? "",
+    !/\d+\s*deneme|kaldı/i.test(dogru.json?.message ?? ""),
+    dogru.json?.message ?? "",
+  );
+
+  // Parola YANLIŞ + hesap kilitli → kilit durumu ELE VERİLMEZ, 401
+  const yanlis = await girisDene(HEDEF, "yine-yanlis-parola-123");
+  check("Yanlış parola + kilit → 401 (kilit sızdırılmıyor)", yanlis.status === 401, `HTTP ${yanlis.status}`);
+}
+
+console.log("\n═══ 2b. ENUMERATION: kilitli hesap ile bilinmeyen hesap ayırt edilemez ═══");
+{
+  // Isınma: ilk istek JIT/bağlantı maliyeti taşır, ölçüme dahil edilmez
+  await girisDene("isinma@example.com", "yanlis-parola-123");
+
+  const olcum = async (email) => {
+    const sureler = [];
+    let sonuc;
+    for (let i = 0; i < 5; i++) {
+      sonuc = await girisDene(email, "yanlis-parola-123");
+      sureler.push(sonuc.sureMs);
+    }
+    sureler.sort((a, b) => a - b);
+    return { ortanca: sureler[2], status: sonuc.status, json: sonuc.json };
+  };
+
+  const kilitli = await olcum(HEDEF); // hâlâ kilitli
+  const bilinmeyen = await olcum("kesinlikle-yok@example.com");
+
+  check(
+    "Aynı HTTP durumu",
+    kilitli.status === bilinmeyen.status,
+    `kilitli=${kilitli.status} bilinmeyen=${bilinmeyen.status}`,
+  );
+  check(
+    "Aynı mesaj",
+    (kilitli.json?.message ?? "") === (bilinmeyen.json?.message ?? ""),
+    kilitli.json?.message ?? "",
+  );
+  check(
+    "Aynı hata kodu",
+    (kilitli.json?.code ?? null) === (bilinmeyen.json?.code ?? null),
+    `${kilitli.json?.code} / ${bilinmeyen.json?.code}`,
+  );
+
+  // Zamanlama: sahte hash doğrulaması sayesinde makul tolerans içinde
+  const oran = Math.max(kilitli.ortanca, bilinmeyen.ortanca) /
+    Math.max(1, Math.min(kilitli.ortanca, bilinmeyen.ortanca));
+  check(
+    "Yanıt süreleri benzer (oran < 3x)",
+    oran < 3,
+    `kilitli=${kilitli.ortanca.toFixed(0)}ms bilinmeyen=${bilinmeyen.ortanca.toFixed(0)}ms oran=${oran.toFixed(2)}x`,
   );
 }
 
@@ -133,7 +196,7 @@ console.log("\n═══ 4. Başarılı girişte sayaç sıfırlanır ═══"
   const st = await durum(HEDEF);
   check("Sayaç sıfırlandı", st?.password_failed_count === 0, `sayaç=${st?.password_failed_count}`);
   check("Kilit temizlendi", st?.password_locked_until === null);
-  check("Sıfırlama audit'e yazıldı", (await auditSayisi("security_counter_reset", HEDEF)) >= 1);
+  check("Sıfırlama audit'e yazıldı (bu koşu)", (await kosuAuditSayisi("security_counter_reset")) >= 1);
 }
 
 console.log("\n═══ 5. Bilinmeyen e-posta ile kayıtlı e-posta benzer yanıt verir ═══");
@@ -251,29 +314,88 @@ await sifirla(HEDEF);
   check("Sıfırlama sonrası giriş yapılabiliyor", res.status === 200, `HTTP ${res.status}`);
 }
 
+console.log("\n═══ 8b. Kilit yükseltmesi: 15 dk → aynı gün 60 dk → ertesi gün 15 dk ═══");
+await sifirla(HEDEF);
+{
+  const id = await userId(HEDEF);
+  const kilitDk = async () => {
+    const { rows } = await sql.query(
+      "SELECT EXTRACT(EPOCH FROM (password_locked_until - now()))/60 AS dk, password_lock_count_today AS sayi, password_lock_count_date AS gun FROM auth_security_state WHERE user_id=$1",
+      [id],
+    );
+    return rows[0];
+  };
+  const esigeUlas = async () => {
+    await sql.query("DELETE FROM auth_rate_limit");
+    for (let i = 0; i < 5; i++) await girisDene(HEDEF, "yanlis-parola-123");
+  };
+
+  // 1. eşik → 15 dk
+  await esigeUlas();
+  const ilk = await kilitDk();
+  check("İlk kilit ≈ 15 dk", ilk.dk > 13 && ilk.dk <= 15.5, `${Number(ilk.dk).toFixed(1)} dk`);
+  check("Gün sayacı 1", Number(ilk.sayi) === 1, `sayı=${ilk.sayi}`);
+
+  // Aynı gün 2. eşik → 60 dk (kilidi ve pencereyi temizle, gün sayacı kalsın)
+  await sql.query(
+    `UPDATE auth_security_state SET password_locked_until = NULL,
+       password_failed_count = 0, password_window_started_at = NULL WHERE user_id=$1`,
+    [id],
+  );
+  await esigeUlas();
+  const ikinci = await kilitDk();
+  check("Aynı gün 2. kilit ≈ 60 dk", ikinci.dk > 58 && ikinci.dk <= 60.5, `${Number(ikinci.dk).toFixed(1)} dk`);
+  check("Gün sayacı 2", Number(ikinci.sayi) === 2, `sayı=${ikinci.sayi}`);
+
+  // Ertesi gün 1. eşik → yine 15 dk (sayaç günü dünde bırakılır)
+  await sql.query(
+    `UPDATE auth_security_state SET password_locked_until = NULL,
+       password_failed_count = 0, password_window_started_at = NULL,
+       password_lock_count_date = CURRENT_DATE - 1 WHERE user_id=$1`,
+    [id],
+  );
+  await esigeUlas();
+  const ertesi = await kilitDk();
+  check("Ertesi gün ilk kilit ≈ 15 dk", ertesi.dk > 13 && ertesi.dk <= 15.5, `${Number(ertesi.dk).toFixed(1)} dk`);
+  check("Gün sayacı 1'e döndü", Number(ertesi.sayi) === 1, `sayı=${ertesi.sayi}`);
+}
+
 console.log("\n═══ 9. Audit çıktısında sır yok ═══");
 {
   /**
-   * Yalnız BU KOŞUDA üretilen kayıtlar denetlenir. audit_logs append-only'dir;
-   * geçmiş geliştirme kayıtları silinemez (ve silinmemelidir). Kontrolün
-   * amacı mevcut davranışı doğrulamaktır, tarihi temizlemek değil.
+   * Yalnız BU KOŞUDA üretilen kayıtlar denetlenir — request_id ile.
+   * Zaman penceresi kullanılmaz: pencere hem kırılgandır (yavaş koşuda
+   * kayıt dışarı taşar) hem de başka koşuların kayıtlarını yakalayabilir.
+   * audit_logs append-only'dir; geçmişe dokunulmaz.
    */
+  const kayitSayisi = await kosuAuditSayisi("login_failed");
+  check("Bu koşu audit kaydı üretti (request_id çalışıyor)", kayitSayisi > 0, `${kayitSayisi} kayıt`);
+
   const { rows } = await sql.query(
     `SELECT count(*)::int AS n FROM audit_logs
-     WHERE created_at > now() - interval '10 minutes'
+     WHERE request_id = $1
        AND (changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%'
          OR changes::text ILIKE '%secret%'  OR changes::text ILIKE '%otpauth%'
          OR changes::text ILIKE '%backup%'  OR changes::text ILIKE '%token%')`,
+    [RUN_ID],
   );
   check("audit_logs'ta sır izi yok (bu koşu)", rows[0].n === 0, `${rows[0].n} şüpheli kayıt`);
 
+  const { rows: dg } = await sql.query(
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1",
+    [RUN_ID],
+  );
+  check("Deneme günlüğü bu koşuyu kaydetti", dg[0].n > 0, `${dg[0].n} deneme`);
+
   const { rows: ip } = await sql.query(
-    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE ip_hash LIKE '%.%' OR identifier_hash LIKE '%@%'",
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1 AND (ip_hash LIKE '%.%' OR identifier_hash LIKE '%@%')",
+    [RUN_ID],
   );
   check("Deneme günlüğünde ham IP/e-posta yok (yalnız hash)", ip[0].n === 0, `${ip[0].n} kayıt`);
 
   const { rows: len } = await sql.query(
-    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE length(identifier_hash) <> 64",
+    "SELECT count(*)::int AS n FROM auth_login_attempts WHERE request_id=$1 AND length(identifier_hash) <> 64",
+    [RUN_ID],
   );
   check("Kimlik hash'leri sha256 uzunluğunda", len[0].n === 0);
 }

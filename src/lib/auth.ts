@@ -117,10 +117,19 @@ export const auth = betterAuth({
     before: createAuthMiddleware(async (ctx) => {
       const path = ctx.path;
 
-      // Parola girişi: hesap kilitliyse akış hiç başlamaz
+      /**
+       * Parola girişi. Kilit durumu ancak parola DOĞRUYSA ele verilir;
+       * yanlış parolada kilitli hesap da bilinmeyen hesapla aynı 401'i alır
+       * (enumeration engeli). Karar için parola doğrulaması burada yapılır,
+       * bu yüzden Better Auth'un kripto fonksiyonları guard'a geçirilir.
+       */
       if (path.startsWith("/sign-in/email")) {
-        const email = (ctx.body as { email?: string } | undefined)?.email ?? "";
-        await parolaGirisiOncesi(email, ctx.headers);
+        const body = ctx.body as { email?: string; password?: string } | undefined;
+        const kripto = (await auth.$context).password;
+        await parolaGirisiOncesi(body?.email ?? "", body?.password ?? "", ctx.headers, {
+          hash: kripto.hash,
+          verify: kripto.verify,
+        });
         return;
       }
 

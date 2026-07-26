@@ -19,6 +19,13 @@ for (const line of readFileSync(join(here, "..", ".env"), "utf8").split("\n")) {
 const BASE = process.env.PREVIEW_URL ?? "http://localhost:3000";
 const PAROLA = "gelistirme-test-parolasi";
 
+/**
+ * Bu koşuya özgü kimlik — x-request-id olarak gönderilir, sunucu audit ve
+ * deneme günlüğüne yazar. Sızıntı kontrolleri yalnız bu koşunun kayıtlarına
+ * bakar; zaman penceresi kullanılmaz (append-only geçmişe dokunulmaz).
+ */
+const RUN_ID = `authflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
 const results = [];
 function check(name, ok, detail = "") {
   results.push({ name, ok });
@@ -73,6 +80,7 @@ function client() {
           // Better Auth CSRF koruması Origin bekler (tarayıcı davranışı)
           origin: BASE,
           "x-forwarded-for": ip,
+          "x-request-id": RUN_ID,
           ...(cookies ? { cookie: cookies } : {}),
         },
         body: JSON.stringify(body ?? {}),
@@ -98,7 +106,7 @@ function client() {
     },
     async get(path) {
       const res = await fetch(`${BASE}${path}`, {
-        headers: { origin: BASE, "x-forwarded-for": ip, ...(cookies ? { cookie: cookies } : {}) },
+        headers: { origin: BASE, "x-forwarded-for": ip, "x-request-id": RUN_ID, ...(cookies ? { cookie: cookies } : {}) },
         redirect: "manual",
       });
       return { status: res.status, location: res.headers.get("location") };
@@ -290,19 +298,29 @@ console.log("\n═══ 7. Rol bazlı finans maskeleme (dashboard HTML) ══�
 
 console.log("\n═══ 8. Sır sızıntısı kontrolü ═══");
 {
+  // Yalnız bu koşunun kayıtları (request_id ile), zaman penceresi değil
   const { rows } = await sql.query(
-    "SELECT count(*)::int AS n FROM audit_logs WHERE changes::text ILIKE '%secret%' OR changes::text ILIKE '%otpauth%' OR changes::text ILIKE '%backup%'",
+    `SELECT count(*)::int AS n FROM audit_logs
+     WHERE request_id = $1
+       AND (changes::text ILIKE '%secret%' OR changes::text ILIKE '%otpauth%'
+         OR changes::text ILIKE '%backup%')`,
+    [RUN_ID],
   );
-  check("audit_logs'ta 2FA sır izi yok", rows[0].n === 0, `${rows[0].n} şüpheli kayıt`);
+  check("audit_logs'ta 2FA sır izi yok (bu koşu)", rows[0].n === 0, `${rows[0].n} şüpheli kayıt`);
 
-  // Yalnız bu koşu denetlenir: audit_logs append-only'dir, geçmiş
-  // geliştirme kayıtları silinemez (ve silinmemelidir).
   const { rows: pw } = await sql.query(
     `SELECT count(*)::int AS n FROM audit_logs
-     WHERE created_at > now() - interval '10 minutes'
+     WHERE request_id = $1
        AND (changes::text ILIKE '%parola%' OR changes::text ILIKE '%password%')`,
+    [RUN_ID],
   );
   check("audit_logs'ta parola izi yok (bu koşu)", pw[0].n === 0, `${pw[0].n} şüpheli kayıt`);
+
+  const { rows: kanit } = await sql.query(
+    "SELECT count(*)::int AS n FROM audit_logs WHERE request_id = $1",
+    [RUN_ID],
+  );
+  check("Bu koşu audit kaydı üretti (request_id çalışıyor)", kanit[0].n > 0, `${kanit[0].n} kayıt`);
 }
 
 await sql.end();

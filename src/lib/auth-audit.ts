@@ -27,6 +27,12 @@ export interface AuthAuditInput {
   actorEmail?: string | null;
   ipAddress?: string | null;
   userAgent?: string | null;
+  /**
+   * İstek kimliği (x-request-id başlığından). Testler kendi ürettikleri
+   * kayıtları bu alanla bulur — zaman penceresine dayanmak yerine.
+   * Append-only geçmişe dokunulmaz.
+   */
+  requestId?: string | null;
   /** Ek bağlam — sırlar redact() ile temizlenir */
   context?: Record<string, unknown>;
 }
@@ -53,6 +59,7 @@ export async function writeAuthAudit(input: AuthAuditInput): Promise<void> {
       changes: input.context ? redact(input.context) : null,
       ipAddress: input.ipAddress ?? null,
       userAgent: input.userAgent ?? null,
+      requestId: input.requestId ?? null,
     });
   } catch (err) {
     // Audit yazımı giriş akışını ASLA bloke etmez; ama sessizce de kaybolmaz.

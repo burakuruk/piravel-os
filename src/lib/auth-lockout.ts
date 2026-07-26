@@ -126,7 +126,7 @@ export async function parolaBasarisiz(userId: string): Promise<BasarisizSonuc> {
                 ELSE auth_security_state.password_failed_count + 1
               END) >= ${esik}
         THEN now() + (CASE
-               WHEN auth_security_state.password_lock_day = CURRENT_DATE
+               WHEN auth_security_state.password_lock_count_date = CURRENT_DATE
                  AND auth_security_state.password_lock_count_today >= 1
                THEN ${tekrarKilitDk} || ' minutes'
                ELSE ${kilitDk} || ' minutes'
@@ -142,13 +142,13 @@ export async function parolaBasarisiz(userId: string): Promise<BasarisizSonuc> {
                 ELSE auth_security_state.password_failed_count + 1
               END) >= ${esik}
         THEN CASE
-               WHEN auth_security_state.password_lock_day = CURRENT_DATE
+               WHEN auth_security_state.password_lock_count_date = CURRENT_DATE
                THEN auth_security_state.password_lock_count_today + 1
                ELSE 1
              END
         ELSE auth_security_state.password_lock_count_today
       END,
-      password_lock_day = CASE
+      password_lock_count_date = CASE
         WHEN (CASE
                 WHEN auth_security_state.password_window_started_at IS NULL
                   OR auth_security_state.password_window_started_at
@@ -157,7 +157,7 @@ export async function parolaBasarisiz(userId: string): Promise<BasarisizSonuc> {
                 ELSE auth_security_state.password_failed_count + 1
               END) >= ${esik}
         THEN CURRENT_DATE
-        ELSE auth_security_state.password_lock_day
+        ELSE auth_security_state.password_lock_count_date
       END,
       updated_at = now()
     RETURNING password_failed_count, password_locked_until
@@ -283,6 +283,29 @@ export async function parolaSifirlamaSonrasiTemizle(userId: string): Promise<voi
       password_locked_until = NULL,
       updated_at = now()
   `);
+}
+
+/**
+ * Sabit bir sahte parola hash'i — bilinmeyen hesaplarda zamanlama farkını
+ * azaltmak için kullanılır.
+ *
+ * Kullanıcı yoksa parola doğrulaması hiç yapılmazsa yanıt belirgin biçimde
+ * daha hızlı döner ve bu, hesabın var olup olmadığını ele verir. Bu yüzden
+ * bilinmeyen hesaplarda da gerçek bir hash doğrulaması koşturulur.
+ */
+let sahteHash: string | null = null;
+
+export async function sahteParolaDogrulamasi(
+  verify: (data: { hash: string; password: string }) => Promise<boolean>,
+  hash: (password: string) => Promise<string>,
+  girilenParola: string,
+): Promise<void> {
+  try {
+    sahteHash ??= await hash("zamanlama-esitleme-icin-sahte-parola-degeri");
+    await verify({ hash: sahteHash, password: girilenParola });
+  } catch {
+    // Zamanlama eşitlemesi başarısız olursa akış etkilenmez
+  }
 }
 
 /** Deneme günlüğü — kullanıcı bilinmese de yazılır. */
