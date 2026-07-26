@@ -1,24 +1,21 @@
 /**
  * ZORUNLU 2FA KURULUMU — 2/2: kurtarma kodları (wireframe)
  *
- * Kapı mantığı (revizyon 1):
+ * Kapı mantığı — 2FA kuran HER kullanıcı için aynıdır (rol farkı yoktur):
  *   1) Kullanıcı KOPYALA veya İNDİR işlemlerinden en az birini yapar
  *   2) "Güvenli bir yere kaydettim" onayını verir
- *   3) SA/FIN için ek adım: rastgele seçilen bir kurtarma kodu tekrar girilir
+ *   3) Sistemin rastgele seçtiği bir kurtarma kodu tekrar girilir
  *   → üçü tamamlanmadan "Kurulumu tamamla" pasiftir
  *
+ * Rol yalnızca 2FA'nın ZORUNLU olup olmadığını belirler (SA/FIN zorunlu,
+ * OPS/MEM isteğe bağlı); kuruluma başlayan herkes aynı güvenli akışı tamamlar.
+ *
  * Ekranda gösterilen an: kodlar kopyalanmış, onay verilmiş, doğrulama bekleniyor.
+ * Kodlar açıkça sahtedir (PRD §6.3).
  */
-import { AuthShell, Button, Checkbox, Notice, RecoveryCodes } from "../_components";
+import { AuthShell, Button, Checkbox, Notice, RecoveryCodes, SAHTE } from "../_components";
 
-const CODES = [
-  "4f2a-91bd",
-  "7c05-3e8a",
-  "b13e-6d47",
-  "9a80-2fc1",
-  "e574-0ba9",
-  "2d6f-8471",
-];
+const CODES = SAHTE.kurtarmaKodlari;
 
 export default function KurtarmaKodlariWireframe() {
   return (
@@ -28,7 +25,7 @@ export default function KurtarmaKodlariWireframe() {
         Her kod bir kez kullanılabilir.
       </Notice>
 
-      <RecoveryCodes codes={CODES} />
+      <RecoveryCodes codes={[...CODES]} />
 
       {/* Kopyala VEYA indir — en az biri */}
       <div className="mb-4 flex gap-2 max-md:flex-col">
@@ -45,7 +42,7 @@ export default function KurtarmaKodlariWireframe() {
 
       <Checkbox checked>Kurtarma kodlarını güvenli bir yere kaydettim.</Checkbox>
 
-      {/* SA/FIN için ek doğrulama — rastgele kod */}
+      {/* Rastgele kod doğrulaması — 2FA kuran TÜM kullanıcılar için */}
       <div className="mb-4 rounded-sm border border-line-200 bg-fill-100 p-3">
         <label htmlFor="rc-challenge" className="mb-1 block text-[13px] font-semibold text-ink-900">
           Doğrulama: <span className="font-normal">3. kurtarma kodunu girin</span>

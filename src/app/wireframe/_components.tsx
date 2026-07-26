@@ -5,8 +5,30 @@
  * Kimlik doğrulama mantığı, form gönderimi veya Better Auth bağlantısı YOKTUR.
  * Gerçek input öznitelikleri (autocomplete, inputMode) bilinçli olarak doğru
  * yazılmıştır — Sprint 1'de aynen taşınacaklar.
+ *
+ * ⚠ GÜVENLİK (PRD §6.3): Buradaki tüm kimlik bilgileri AÇIKÇA SAHTEDİR.
+ * E-posta example.com (RFC 2606 ayrılmış), parola/anahtar/kurtarma kodları
+ * "sahte"/"test" ön ekli. Gerçek veya ileride kullanılabilecek hiçbir kimlik
+ * bilgisi repoya girmez.
  */
 import { Button } from "@/components/ui/button";
+
+/** Wireframe'lerde kullanılan sahte test değerleri — tek kaynak. */
+export const SAHTE = {
+  email: "ornek.kullanici@example.com",
+  /** Parola alanı için; hiçbir yerde gerçek parola olarak kullanılmaz. */
+  parolaGorunur: "sahte-parola-degildir",
+  /** Görsel örnek; geçerli bir TOTP anahtarı DEĞİLDİR. */
+  totpAnahtar: "AAAA BBBB CCCC DDDD",
+  kurtarmaKodlari: [
+    "test-0001",
+    "test-0002",
+    "test-0003",
+    "test-0004",
+    "test-0005",
+    "test-0006",
+  ],
+} as const;
 
 export function AuthShell({
   step,

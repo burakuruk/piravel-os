@@ -2,7 +2,7 @@
  * GİRİŞ — DURUM SAYFASI (wireframe)
  * Dört durum yan yana: Caps Lock uyarısı, şifre görünür, hata, yükleniyor.
  */
-import { Button, EyeToggle, Notice, TextField } from "../_components";
+import { Button, EyeToggle, Notice, SAHTE, TextField } from "../_components";
 
 function Panel({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -22,13 +22,13 @@ export default function GirisDurumlariWireframe() {
       <h1 className="mb-8 font-display text-xl text-gold-500">Giriş ekranı — durumlar</h1>
       <div className="grid grid-cols-2 gap-x-10 gap-y-8">
         <Panel label="CAPS LOCK AÇIK">
-          <TextField label="E-posta" name="e1" type="email" autoComplete="username" defaultValue="ahmetburak@piravel.com" />
+          <TextField label="E-posta" name="e1" type="email" autoComplete="username" defaultValue={SAHTE.email} />
           <TextField
             label="Şifre"
             name="p1"
             type="password"
             autoComplete="current-password"
-            defaultValue="gizlisifre"
+            defaultValue={SAHTE.parolaGorunur}
             trailing={<EyeToggle />}
             hint={
               <p className="mt-1 flex items-center gap-1 text-xs text-warning" role="status">
@@ -43,13 +43,13 @@ export default function GirisDurumlariWireframe() {
         </Panel>
 
         <Panel label="ŞİFRE GÖRÜNÜR">
-          <TextField label="E-posta" name="e2" type="email" autoComplete="username" defaultValue="ahmetburak@piravel.com" />
+          <TextField label="E-posta" name="e2" type="email" autoComplete="username" defaultValue={SAHTE.email} />
           <TextField
             label="Şifre"
             name="p2"
             type="text"
             autoComplete="current-password"
-            defaultValue="Piravel2026!"
+            defaultValue={SAHTE.parolaGorunur}
             trailing={<EyeToggle shown />}
           />
           <Button variant="primary" className="w-full">Giriş yap</Button>
@@ -57,14 +57,14 @@ export default function GirisDurumlariWireframe() {
 
         <Panel label="HATA — HANGİ ALAN OLDUĞU SÖYLENMEZ">
           <Notice tone="danger">E-posta veya şifre hatalı. 3 deneme hakkınız kaldı.</Notice>
-          <TextField label="E-posta" name="e3" type="email" autoComplete="username" defaultValue="ahmetburak@piravel.com" error />
+          <TextField label="E-posta" name="e3" type="email" autoComplete="username" defaultValue={SAHTE.email} error />
           <TextField label="Şifre" name="p3" type="password" autoComplete="current-password" error trailing={<EyeToggle />} />
           <Button variant="primary" className="w-full">Giriş yap</Button>
         </Panel>
 
         <Panel label="YÜKLENİYOR">
-          <TextField label="E-posta" name="e4" type="email" autoComplete="username" defaultValue="ahmetburak@piravel.com" />
-          <TextField label="Şifre" name="p4" type="password" autoComplete="current-password" defaultValue="gizlisifre" trailing={<EyeToggle />} />
+          <TextField label="E-posta" name="e4" type="email" autoComplete="username" defaultValue={SAHTE.email} />
+          <TextField label="Şifre" name="p4" type="password" autoComplete="current-password" defaultValue={SAHTE.parolaGorunur} trailing={<EyeToggle />} />
           <Button variant="primary" className="w-full opacity-70" disabled>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="animate-spin">
               <path d="M21 12a9 9 0 11-6.2-8.6" />

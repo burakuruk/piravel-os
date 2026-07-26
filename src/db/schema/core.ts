@@ -47,18 +47,24 @@ export const exchangeRates = pgTable(
   ],
 );
 
-// ── 4.1 users (Better Auth Sprint 1'de kendi tablolarını ekler; iş kolonları burada) ──
+/**
+ * users — İŞ ALANI tablosu (rol, marka kapsamı, denetim).
+ *
+ * Kimlik sırları BURADA TUTULMAZ: parola hash'i, TOTP anahtarı ve kurtarma
+ * kodları yalnızca Better Auth tablolarında yaşar (schema/auth.ts).
+ * Sır tek yerde bulunur — iki kopya iki sızıntı yüzeyi demektir (PRD §6.3).
+ * Eşleme: users.id === auth_user.id (aynı UUID).
+ */
 export const users = pgTable(
   "users",
   {
     id: idCol(),
     email: text("email").notNull(),
-    passwordHash: text("password_hash"),
     fullName: text("full_name").notNull(),
     phone: text("phone"),
     role: userRole("role").notNull().default("member"),
     avatarUrl: text("avatar_url"),
-    totpSecret: text("totp_secret"),
+    /** 2FA'nın ne zaman etkinleştirildiği — sır değil, yalnız durum bilgisi */
     totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
     isActive: boolean("is_active").notNull().default(true),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),

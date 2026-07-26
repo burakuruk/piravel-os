@@ -2,7 +2,7 @@
  * ZORUNLU 2FA KURULUMU — 1/2: uygulama bağlama (wireframe)
  * QR masaüstünde 150px; mobilde QR üstte, açıklama altında.
  */
-import { AuthShell, Button, Notice, OtpInput } from "../_components";
+import { AuthShell, Button, Notice, OtpInput, SAHTE } from "../_components";
 
 function QrBox() {
   return (
@@ -28,7 +28,7 @@ export default function KurulumWireframe() {
             Google Authenticator, 1Password veya benzeri bir uygulamayla QR kodu okutun.
           </p>
           <p className="mb-1 text-ink-400">QR okutamıyorsanız anahtarı elle girin:</p>
-          <p className="mb-2 font-mono text-xs break-all text-ink-900">JBSW Y3DP EHPK 3PXP</p>
+          <p className="mb-2 font-mono text-xs break-all text-ink-900">{SAHTE.totpAnahtar}</p>
           <div className="flex flex-wrap gap-2 max-md:justify-center">
             <Button variant="secondary" size="table">Anahtarı kopyala</Button>
             <Button variant="ghost" size="table">QR kodu yenile</Button>

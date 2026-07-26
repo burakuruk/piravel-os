@@ -411,9 +411,21 @@ Görsel olarak 6 kutu, **teknik olarak tek erişilebilir alan** gibi davranır:
 **2/2 — Kurtarma kodları** (üç kapı, üçü de geçilmeden tamamlanamaz)
 1. Kullanıcı **"Kodları kopyala" VEYA "Dosya olarak indir"** işlemlerinden **en az birini** yapar (yalnız indirme zorunlu değildir)
 2. **"Kurtarma kodlarını güvenli bir yere kaydettim"** onayını verir
-3. **SA ve FIN rolleri için:** rastgele seçilen bir kurtarma kodu (örn. "3. kodu girin") tekrar girilir
+3. Sistemin **rastgele seçtiği** bir kurtarma kodu (örn. "3. kodu girin") tekrar girilir
 - Kodlar masaüstünde 2 kolon, **mobilde tek kolon**
 - Kart altında kalıcı not: *"Bu kodlar bir daha gösterilmez. Yeni kod üretilirse eskiler geçersiz olur."*
+
+> **Rol farkı yoktur.** Rol yalnızca 2FA'nın *zorunlu* olup olmadığını belirler
+> (SA/FIN zorunlu, OPS/MEM isteğe bağlı). Kuruluma başlayan **her** kullanıcı üç
+> kapının tamamını geçer — böylece rol bazında daha zayıf bir kurulum yolu oluşmaz.
+
+#### Wireframe kimlik bilgisi kuralı (PRD §6.3)
+
+Wireframe sayfalarında ve `docs/previews/` görsellerinde görünen tüm kimlik
+bilgileri **açıkça sahtedir** ve tek kaynaktan gelir (`src/app/wireframe/_components.tsx` → `SAHTE`):
+e-posta `example.com` (RFC 2606), parola `sahte-parola-degildir`, TOTP anahtarı
+`AAAA BBBB CCCC DDDD` (geçerli base32 değildir), kurtarma kodları `test-000n`.
+Gerçek veya ileride kullanılabilecek hiçbir değer repoya girmez.
 
 ### 16.2 Ana dashboard
 - **Amaç:** "Şirketin bugünkü durumu nedir?" — 5 saniyede cevap. **Hiyerarşi:** metrikler → dikkat isteyenler → eğilim.

@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Sidebar } from "@/components/layout/sidebar";
-import { Topbar } from "@/components/layout/topbar";
+import { canSeeAmounts } from "@/lib/auth-policy";
+import { requireUser } from "@/lib/authz";
 import { cn } from "@/lib/utils";
 
 /** Placeholder işaretleri yalnız geliştirmede görünür; gerçek veri bağlanınca kalkar. */
@@ -34,12 +34,16 @@ const accounts = [
   { name: "Nakit Kasa", balance: "4.500,00 ₺" },
 ];
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const user = await requireUser();
+  /**
+   * Finans bölümleri OPS/MEM için HİÇ RENDER EDİLMEZ (docs/02 §5).
+   * Gizlemek değil, sunucudan hiç göndermemek esastır — HTML kaynağında bile
+   * tutar bulunmaz.
+   */
+  const finansGorunur = canSeeAmounts(user.role);
+
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar breadcrumb="Genel Bakış" />
         <main className="mx-auto w-full max-w-[1320px] flex-1 px-6 py-6">
           {/* Sayfa başlığı: tek display, altında ince altın çizgi (06 §3) */}
           <div className="mb-6">
@@ -52,6 +56,7 @@ export default function DashboardPage() {
           {/* Metrik şeridi — kart değil, çizgiyle ayrılmış sade sayılar.
               Mobilde 2×2 ve kompakt: dikey padding düşer, satır boşluğu yerine
               hafif yatay ayraç kullanılır. Tutar boyutu korunur. */}
+          {finansGorunur && (
           <Card className="mb-6">
             <div className="grid grid-cols-4 divide-x divide-line-200 max-md:grid-cols-2 max-md:divide-x-0">
               {metrics.map((m, i) => (
@@ -78,10 +83,12 @@ export default function DashboardPage() {
               ))}
             </div>
           </Card>
+          )}
 
           <div className="grid grid-cols-12 gap-6">
-            {/* Dikkat gerektirenler — önem sıralı tek birleşik liste */}
-            <Card className="col-span-7 max-lg:col-span-12">
+            {/* Dikkat gerektirenler — önem sıralı tek birleşik liste.
+                OPS/MEM yalnız kendi işlerini görür (Sprint 6'da gerçek veriye bağlanır). */}
+            <Card className={cn(finansGorunur ? "col-span-7" : "col-span-12", "max-lg:col-span-12")}>
               <CardHeader>
                 <CardTitle>Dikkat gerektirenler</CardTitle>
               </CardHeader>
@@ -97,7 +104,8 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Banka özeti */}
+            {/* Banka özeti — yalnız finans rolleri */}
+            {finansGorunur && (
             <Card className="col-span-5 max-lg:col-span-12">
               <CardHeader>
                 <CardTitle>Banka & Kasa</CardTitle>
@@ -122,8 +130,10 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
 
             {/* Nakit akışı grafiği — Sprint 6'da Recharts ile bağlanır */}
+            {finansGorunur && (
             <Card className="col-span-12">
               <CardHeader>
                 <CardTitle>Nakit akışı (90 gün)</CardTitle>
@@ -134,9 +144,8 @@ export default function DashboardPage() {
                 </div>
               </CardContent>
             </Card>
+            )}
           </div>
         </main>
-      </div>
-    </div>
   );
 }

@@ -243,7 +243,7 @@ Operasyon ve Ekip Üyesi rollerinde finans kartları **hiç render edilmez** (sa
 
 | Gereksinim | MVP'de nasıl |
 |---|---|
-| 2FA | TOTP zorunlu (Süper Yönetici + Finans için), diğerleri opsiyonel |
+| 2FA | **Zorunlu:** super_admin, finance · **İsteğe bağlı:** operations, member.<br>Rol yalnızca *zorunluluğu* belirler: 2FA kuran **her** kullanıcı aynı güvenli kurulum akışını (kopyala/indir → onay → rastgele kurtarma kodu doğrulaması) tamamlar. Rol bazında zayıf kurulum yolu yoktur |
 | Şifre saklama | Argon2id hash. Düz metin **asla** |
 | IBAN | Uygulama katmanında şifreli saklanır, UI'da maskeli (`TR** **** **** 1234`), tam görüntüleme audit'e yazılır |
 | Oturum | 12 saat, hassas işlemde yeniden doğrulama |
@@ -266,6 +266,7 @@ TOTP secret, QR içeriği (`otpauth://` URI) ve kurtarma kodları **en yüksek h
 | **Kurtarma kodları hash'li saklanır** (Argon2id), düz metin tutulmaz | Şifreyle aynı hassasiyet |
 | **Kurulumdan sonra yeniden açık gösterilmez** — yalnız üretim anında bir kez | Ekranda kalan sır ekran paylaşımında sızar |
 | **Yenilenirse eski kodlar geçersiz olur** — tamamı iptal, tek işlemde | Kısmi geçerlilik kafa karışıklığı ve açık bırakır |
+| **Wireframe ve `docs/previews/` yalnız sahte değer içerir** — e-posta `example.com`, parola/anahtar/kod `sahte`/`test` ön ekli, tek kaynaktan (`SAHTE` sabiti) | Görseller ve wireframe kodu repoda kalıcıdır; gerçek bir değer sızarsa geri alınamaz |
 | TOTP secret DB'de **şifreli** saklanır (`users.totp_secret`) | Veritabanı yedeği sızsa bile kullanılamaz |
 
 Uygulamada: sır taşıyan alanlar için ortak bir `redact()` yardımcı fonksiyonu kullanılır ve Sentry `beforeSend` kancasında bu alanlar temizlenir. Bu, Sprint 1'in kabul kriterlerindendir.

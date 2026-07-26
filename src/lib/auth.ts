@@ -1,0 +1,162 @@
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/api";
+import { twoFactor } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import * as schema from "@/db/schema";
+import { newId } from "@/lib/ids";
+import { writeAuthAudit } from "@/lib/auth-audit";
+
+/**
+ * Better Auth yapılandırması — PRD §7, docs/03 §2 (Kimlik doğrulama sınırı).
+ *
+ * Better Auth yönetir : oturum, parola hash'i, TOTP, kurtarma kodları
+ * Biz yönetiriz       : rol, marka kapsamı, audit köprüsü, zorunlu 2FA kuralı
+ *
+ * ⚠ Rol ASLA session'dan okunmaz — her istekte `users` tablosundan doğrulanır
+ * (docs/02 §6). Session'a yazılan bir rol, oturum yenilenene kadar eskir ve
+ * yetki yükseltme yüzeyi oluşturur.
+ */
+export const auth = betterAuth({
+  appName: "Piravel OS",
+  baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
+  secret: process.env.BETTER_AUTH_SECRET ?? "gelistirme-ortami-icin-gecici-anahtar",
+
+  /**
+   * CSRF koruması: yalnız bu origin'lerden gelen istekler kabul edilir.
+   *
+   * Varsayılan olarak baseURL güvenilir. Ek origin'ler
+   * BETTER_AUTH_TRUSTED_ORIGINS ile (virgülle ayrılmış) verilir — ters proxy
+   * arkasında veya otomasyon (Playwright IPv4 kullanmak zorunda) için gerekir.
+   * Geliştirmede yerel adresler zaten eklenir.
+   */
+  trustedOrigins: [
+    ...(process.env.BETTER_AUTH_TRUSTED_ORIGINS?.split(",")
+      .map((o) => o.trim())
+      .filter(Boolean) ?? []),
+    ...(process.env.NODE_ENV === "production"
+      ? []
+      : ["http://localhost:3000", "http://127.0.0.1:3000"]),
+  ],
+
+  database: drizzleAdapter(db, {
+    provider: "pg",
+    schema: {
+      user: schema.authUsers,
+      session: schema.authSessions,
+      account: schema.authAccounts,
+      verification: schema.authVerifications,
+      twoFactor: schema.authTwoFactors,
+    },
+  }),
+
+  emailAndPassword: {
+    enabled: true,
+    minPasswordLength: 12,
+    // Kayıt açık değildir: kullanıcılar yalnız Süper Yönetici tarafından oluşturulur
+    disableSignUp: true,
+  },
+
+  session: {
+    expiresIn: 60 * 60 * 12, // 12 saat (PRD §6.3)
+    updateAge: 60 * 60,
+    // Hassas işlemlerde "taze oturum" eşiği: 15 dakika
+    freshAge: 60 * 15,
+  },
+
+  advanced: {
+    database: { generateId: () => newId() },
+  },
+
+  plugins: [
+    twoFactor({
+      issuer: "Piravel OS",
+      // Kurtarma kodları Better Auth tarafından şifreli saklanır ve
+      // kurulumdan sonra bir daha gösterilmez (PRD §6.3)
+      backupCodeOptions: { amount: 6, length: 8 },
+    }),
+  ],
+
+  /**
+   * Audit köprüsü: giriş, başarısız giriş ve çıkış olayları `audit_logs`'a
+   * yazılır (docs/02 §6). Sır içeren gövde ASLA kaydedilmez.
+   */
+  hooks: {
+    /**
+     * Çıkış audit'i BEFORE kancasında yazılır: after çalıştığında oturum
+     * silinmiş olur ve kullanıcının kim olduğu artık bilinemez.
+     */
+    before: createAuthMiddleware(async (ctx) => {
+      if (!ctx.path.startsWith("/sign-out")) return;
+      const session = await auth.api
+        .getSession({ headers: ctx.headers ?? new Headers() })
+        .catch(() => null);
+      if (session?.user) {
+        await writeAuthAudit({
+          action: "logout",
+          actorId: session.user.id,
+          actorEmail: session.user.email,
+          ipAddress: ctx.headers?.get("x-forwarded-for") ?? null,
+          userAgent: ctx.headers?.get("user-agent") ?? null,
+        });
+      }
+    }),
+
+    after: createAuthMiddleware(async (ctx) => {
+      const path = ctx.path;
+      const ip = ctx.headers?.get("x-forwarded-for") ?? null;
+      const ua = ctx.headers?.get("user-agent") ?? null;
+
+      if (path.startsWith("/sign-in")) {
+        const user = ctx.context.newSession?.user;
+        if (user) {
+          await writeAuthAudit({
+            action: "login",
+            actorId: user.id,
+            actorEmail: user.email,
+            ipAddress: ip,
+            userAgent: ua,
+          });
+        } else {
+          // Oturum açılmadıysa kimlik bilgileri hatalıdır.
+          // E-posta kaydedilir (kime denendiği önemlidir), parola ASLA.
+          const email = (ctx.body as { email?: string } | undefined)?.email ?? null;
+          await writeAuthAudit({
+            action: "login_failed",
+            actorEmail: email,
+            ipAddress: ip,
+            userAgent: ua,
+          });
+        }
+      }
+
+      // Çıkış audit'i before kancasında yazılır (yukarı bakınız).
+    }),
+  },
+
+  databaseHooks: {
+    user: {
+      create: {
+        // auth_user ile iş tablomuz users arasında 1:1 eşleme kurulur.
+        after: async (user) => {
+          const existing = await db
+            .select({ id: schema.users.id })
+            .from(schema.users)
+            .where(eq(schema.users.id, user.id))
+            .limit(1);
+          if (existing.length === 0) {
+            await db.insert(schema.users).values({
+              id: user.id,
+              email: user.email,
+              fullName: user.name,
+              role: "member", // yükseltme yalnız SA tarafından yapılır
+            });
+          }
+        },
+      },
+    },
+  },
+});
+
+export type Auth = typeof auth;

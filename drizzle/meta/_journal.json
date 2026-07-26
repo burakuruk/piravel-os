@@ -15,6 +15,27 @@
       "when": 1785076826630,
       "tag": "0001_constraints_triggers_views",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785080328219,
+      "tag": "0002_better_auth_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785081513511,
+      "tag": "0003_two_factor_verified",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785081692887,
+      "tag": "0004_two_factor_counters",
+      "breakpoints": true
     }
   ]
 }

@@ -1,25 +1,25 @@
-"use client";
-
-import { Bell, Menu, Search } from "lucide-react";
+import { Bell, Search } from "lucide-react";
+import type { UserRole } from "@/lib/auth-policy";
+import { MobileNav } from "./mobile-nav";
 
 /**
  * Topbar (06 §8): 56px, beyaz, altta 1px çizgi.
  * Masaüstü : breadcrumb + global arama (⌘K) + bildirim zili
  * Mobil    : [hamburger] — sağda [arama] [bildirim]
  *            Breadcrumb gösterilmez; büyük sayfa başlığı zaten içerikte.
- *            Hamburger, navigasyon drawer'ını açar (Sprint 1).
  */
-export function Topbar({ breadcrumb = "Genel Bakış" }: { breadcrumb?: string }) {
+export function Topbar({
+  breadcrumb = "Genel Bakış",
+  role,
+  fullName,
+}: {
+  breadcrumb?: string;
+  role: UserRole;
+  fullName: string;
+}) {
   return (
     <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center justify-between border-b border-line-200 bg-surface px-6 max-md:px-4">
-      {/* Mobil: hamburger (drawer Sprint 1'de bağlanır) */}
-      <button
-        type="button"
-        className="hidden h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100 max-lg:flex"
-        aria-label="Menüyü aç"
-      >
-        <Menu size={19} strokeWidth={1.75} />
-      </button>
+      <MobileNav role={role} fullName={fullName} />
       <div className="text-sm text-ink-600 max-lg:hidden">{breadcrumb}</div>
       <div className="flex items-center gap-3">
         <button
@@ -39,7 +39,6 @@ export function Topbar({ breadcrumb = "Genel Bakış" }: { breadcrumb?: string }
           aria-label="Bildirimler"
         >
           <Bell size={17} strokeWidth={1.75} />
-          {/* Kritik bildirim noktası — Sprint 6'da gerçek veriye bağlanır */}
           <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-danger" />
         </button>
       </div>

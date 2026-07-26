@@ -2,8 +2,9 @@
  * GİRİŞ — wireframe (06 §16.1)
  * Revizyon: sabit "ADIM 1 / 2" kaldırıldı. 2FA yalnız gerekiyorsa ikinci ekranda
  * görünür; OPS/MEM rollerinde 2FA opsiyonel olduğu için ilk ekran adım sayısı vaat etmez.
+ * Kimlik bilgileri açıkça sahtedir (PRD §6.3).
  */
-import { AuthShell, Button, EyeToggle, TextField } from "../_components";
+import { AuthShell, Button, EyeToggle, SAHTE, TextField } from "../_components";
 
 export default function GirisWireframe() {
   return (
@@ -13,14 +14,14 @@ export default function GirisWireframe() {
         name="email"
         type="email"
         autoComplete="username"
-        defaultValue="ahmetburak@piravel.com"
+        defaultValue={SAHTE.email}
       />
       <TextField
         label="Şifre"
         name="password"
         type="password"
         autoComplete="current-password"
-        defaultValue="gizlisifre"
+        defaultValue={SAHTE.parolaGorunur}
         trailing={<EyeToggle />}
       />
       <Button variant="primary" className="w-full">
