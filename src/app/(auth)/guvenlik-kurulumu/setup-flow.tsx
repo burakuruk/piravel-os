@@ -234,9 +234,16 @@ export function SetupFlow({ zorunlu }: { zorunlu: boolean }) {
         Her kod bir kez kullanılabilir.
       </div>
 
+      {/* Kodlar NUMARALI gösterilir: doğrulama adımı "n. kodu girin" diye
+          sorduğu için, iki sütunlu ızgarada okuma sırası belirsiz kalmamalı.
+          Numarasız haliyle kullanıcı sol sütunu yukarıdan aşağı sayıp yanlış
+          kodu giriyordu. */}
       <div className="mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-sm border border-line-200 bg-fill-100 p-3 font-mono text-xs text-ink-900 max-md:grid-cols-1">
-        {codes.map((c) => (
-          <span key={c}>{c}</span>
+        {codes.map((c, i) => (
+          <span key={c} className="flex gap-2">
+            <span className="w-4 shrink-0 text-right tnum text-ink-400">{i + 1}.</span>
+            <span>{c}</span>
+          </span>
         ))}
       </div>
 
