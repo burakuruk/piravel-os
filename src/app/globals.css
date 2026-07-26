@@ -77,11 +77,14 @@ body {
   font-variant-numeric: tabular-nums lining-nums;
 }
 
-/* Odak halkası: açık zeminde lacivert, koyu kabukta altın (06 §15) */
-:focus-visible {
+/* Odak halkası: açık zeminde lacivert, koyu kabukta altın (06 §15).
+   tabindex="-1" olan kapsayıcılar hariç tutulur: bunlara odak yalnız
+   PROGRAMATİK olarak verilir (drawer açılışı gibi) ve görünür bir halka
+   çizmek, fareyle açan kullanıcıda kalıcı bir süs gibi görünür. */
+:focus-visible:not([tabindex="-1"]) {
   outline: 2px solid var(--color-navy-500);
   outline-offset: 2px;
 }
-[data-shell] :focus-visible {
+[data-shell] :focus-visible:not([tabindex="-1"]) {
   outline-color: var(--color-gold-500);
 }
