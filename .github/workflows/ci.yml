@@ -107,3 +107,9 @@ jobs:
 
       - name: Giriş güvenliği — rate limit ve hesap kilidi (28 kontrol)
         run: npm run verify:lockout
+
+      - name: Adım yükseltme (step-up)
+        run: npm run verify:stepup
+
+      - name: Kullanıcı yönetimi ve davet akışı
+        run: npm run verify:users

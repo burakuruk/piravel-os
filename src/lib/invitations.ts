@@ -3,6 +3,13 @@ import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db, type Db } from "@/db";
 import { authAccounts, userInvitations, users } from "@/db/schema";
 import { inviteTokenPepper } from "@/lib/env";
+import {
+  DAVET_CEREZ_SURESI_SN,
+  DAVET_GECERLILIK_SAAT,
+  DAVET_HATA_KODU,
+  DAVET_HATA_MESAJI,
+  MIN_PAROLA_UZUNLUGU,
+} from "@/lib/invitation-sabitler";
 import { newId } from "@/lib/ids";
 
 /**
@@ -18,23 +25,19 @@ import { newId } from "@/lib/ids";
  * pepper/token sınırı belirsizdir. HMAC bu sınırı tanımlar.
  */
 
-/** Davetin geçerlilik süresi. */
-export const DAVET_GECERLILIK_SAAT = 72;
-
 /**
- * Kabul ekranı çerezinin ömrü. Davetin kendisinden (72 saat) çok daha kısa:
- * çerez yalnız "bağlantıya az önce tıklandı" bilgisini taşır, davetin
- * kendisini temsil etmez.
+ * Sabitler `invitation-sabitler.ts`'te tutulur ve buradan yeniden dışa verilir.
+ * Sebep: istemci bileşenleri bu dosyadan import ederse `pg` tarayıcı paketine
+ * girer ve derleme düşer (bkz. o dosyanın başlığı).
  */
-export const DAVET_CEREZ_SURESI_SN = 10 * 60;
-
-/** Çerez adı — Path=/davet ile sınırlanır. */
-export const DAVET_CEREZ_ADI = "piravel_davet";
-
-/** Dışarıya tek tip yanıt: hangi durumda olduğu kullanıcıya AÇIKLANMAZ. */
-export const DAVET_HATA_KODU = "INVITATION_UNAVAILABLE";
-export const DAVET_HATA_MESAJI =
-  "Bu davet bağlantısı kullanılamıyor. Yöneticinizden yeni bir bağlantı isteyin.";
+export {
+  DAVET_CEREZ_ADI,
+  DAVET_CEREZ_SURESI_SN,
+  DAVET_GECERLILIK_SAAT,
+  DAVET_HATA_KODU,
+  DAVET_HATA_MESAJI,
+  MIN_PAROLA_UZUNLUGU,
+} from "@/lib/invitation-sabitler";
 
 export type DavetDurumu = "pending" | "accepted" | "revoked" | "expired";
 
@@ -214,9 +217,6 @@ export async function davetiCerezIleBul(cerezKimligi: string): Promise<DavetKayd
  * token tarayıcı geçmişinde, Referer'da ve sunucu erişim log'unda kalmaz.
  * Bu adım daveti DEĞİŞTİRMEZ — kabul yalnız POST ile olur.
  */
-/** Kabul edilen parolanın en küçük uzunluğu (seed script'iyle aynı kural). */
-export const MIN_PAROLA_UZUNLUGU = 12;
-
 export class DavetKullanilamaz extends Error {
   readonly code = DAVET_HATA_KODU;
   /** Gerçek sebep YALNIZ audit'e yazılır; dışarıya tek tip mesaj döner. */

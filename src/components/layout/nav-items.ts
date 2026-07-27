@@ -11,6 +11,7 @@ import {
   ShieldCheck,
   Store,
   Trash2,
+  Users,
   Wallet,
 } from "lucide-react";
 import type { UserRole } from "@/lib/auth-policy";
@@ -68,6 +69,7 @@ const GROUPS: NavGroup[] = [
     label: "SİSTEM",
     items: [
       { href: "/bildirimler", label: "Bildirimler", icon: Bell, roles: ALL },
+      { href: "/kullanicilar", label: "Kullanıcılar", icon: Users, roles: SA },
       { href: "/ayarlar", label: "Ayarlar", icon: Settings, roles: SA },
       { href: "/denetim", label: "Denetim", icon: ShieldCheck, roles: FINANS },
       { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2, roles: SA },

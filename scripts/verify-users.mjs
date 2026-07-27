@@ -151,8 +151,8 @@ const mail = (x) => `du-${x}-${DAMGA}@example.com`;
 async function fixtureTemizle() {
   await sql.query("DELETE FROM auth_rate_limit");
   // Bu koşunun ürettiği kullanıcılar (davetler FK CASCADE ile düşer)
-  await sql.query("DELETE FROM auth_user WHERE email LIKE $1", [`du-%-${DAMGA}@example.com`]);
-  await sql.query("DELETE FROM users WHERE email LIKE $1", [`du-%-${DAMGA}@example.com`]);
+  await sql.query("DELETE FROM auth_user WHERE email LIKE 'du-%@example.com'");
+  await sql.query("DELETE FROM users WHERE email LIKE 'du-%@example.com'");
   // Sabit fixture kullanıcılarının 2FA'sı ve oturumları
   const mails = ["admin@example.com", "finance@example.com", "operations@example.com", "member@example.com"];
   await sql.query(

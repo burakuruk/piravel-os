@@ -1,4 +1,4 @@
-import { DAVET_CEREZ_ADI, DAVET_CEREZ_SURESI_SN } from "@/lib/invitations";
+import { DAVET_CEREZ_ADI, DAVET_CEREZ_SURESI_SN } from "@/lib/invitation-sabitler";
 
 /**
  * Davet çerezinin Set-Cookie dizesi — nitelikleri tek yerde toplanır.

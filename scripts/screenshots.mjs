@@ -171,7 +171,112 @@ async function fixtureSifirla() {
   await sql.end();
 }
 
+/**
+ * Kullanıcı ekranları için sahte kadro.
+ *
+ * ⚠ Yalnız `sahte-*@example.com` adresleri; gerçek kişi verisi kullanılmaz.
+ * Doğrudan SQL ile kurulur — bu bir davranış testi değil, görsel fixture'ı;
+ * amaç her koşuda AYNI ekranın üretilmesi.
+ */
+const SAHTE_KADRO = {
+  bekleyen: "sahte-bekleyen@example.com",
+  pasif: "sahte-pasif@example.com",
+  // Davet bağlantısı ekranı için form üzerinden oluşturulur
+  yeni: "sahte-yeni@example.com",
+};
+
+/**
+ * Görselde gösterilen SAHTE token.
+ *
+ * ⚠ Gerçek token ekran görüntüsüne ASLA girmez: görseller repoya commit'lenir
+ * ve token bir kimlik bilgisidir. Yakalamadan hemen önce DOM'daki değer bununla
+ * değiştirilir; "SAHTE" ibaresi görselin kendisinde de okunur.
+ */
+const SAHTE_TOKEN_URL =
+  "https://piravel.example/davet/SAHTE-ORNEK-TOKEN-ekran-goruntusu-icin";
+
+async function kullaniciFixtureleri() {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+  // `yeni` dahil: bir önceki koşuda form üzerinden oluşturulmuş olabilir
+  const mails = Object.values(SAHTE_KADRO);
+  await sql.query("DELETE FROM auth_user WHERE email = ANY($1)", [mails]);
+  await sql.query("DELETE FROM users WHERE email = ANY($1)", [mails]);
+
+  const kur = async (email, ad, rol, aktif, aktiflesmis) => {
+    const { rows } = await sql.query("SELECT gen_random_uuid() AS id");
+    const id = rows[0].id;
+    await sql.query(
+      `INSERT INTO auth_user (id, name, email, email_verified, created_at, updated_at)
+       VALUES ($1, $2, $3, false, now(), now())`,
+      [id, ad, email],
+    );
+    await sql.query(
+      `INSERT INTO users (id, email, full_name, role, is_active, activated_at, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, now(), now())`,
+      [id, email, ad, rol, aktif, aktiflesmis ? new Date() : null],
+    );
+    return id;
+  };
+
+  const bekleyenId = await kur(SAHTE_KADRO.bekleyen, "Sahte Bekleyen", "operations", false, false);
+  const pasifId = await kur(SAHTE_KADRO.pasif, "Sahte Pasif", "member", false, true);
+  const { rows: ops } = await sql.query(
+    "SELECT id FROM users WHERE email = 'operations@example.com'",
+  );
+
+  // Bekleyen kullanıcıya açık bir davet: ekranda "Davet bekliyor" görünsün.
+  // token_hash gerçek bir token'a ait DEĞİL — sabit, anlamsız bir dize.
+  await sql.query(
+    `INSERT INTO user_invitations (user_id, token_hash, expires_at, created_at, updated_at)
+     VALUES ($1, $2, now() + interval '48 hours', now(), now())`,
+    [bekleyenId, "gorsel-fixture-icin-anlamsiz-hash-degeri"],
+  );
+  await sql.end();
+  return { bekleyenId, pasifId, opsId: ops[0]?.id };
+}
+
 await fixtureSifirla();
+const { bekleyenId, pasifId, opsId } = await kullaniciFixtureleri();
+
+/** Kullanıcı yönetimi ekranları — fixture kimlikleri hazır olduktan sonra eklenir. */
+shots.push(
+  { file: "30-kullanicilar-liste-1440x900.png", path: "/kullanicilar", w: 1440, h: 900, auth: "sa" },
+  { file: "31-kullanici-yeni-1440x900.png", path: "/kullanicilar/yeni", w: 1440, h: 900, auth: "sa",
+    async hazirla(page) {
+      await page.fill("#yk-ad", "Sahte Yeni Kullanıcı");
+      await page.fill("#yk-eposta", SAHTE_KADRO.yeni);
+      await page.selectOption("#yk-rol", "operations");
+    } },
+  { file: "32-davet-baglantisi-1440x900.png", path: "/kullanicilar/yeni", w: 1440, h: 900, auth: "sa",
+    async hazirla(page) {
+      await page.fill("#yk-ad", "Sahte Yeni Kullanıcı");
+      await page.fill("#yk-eposta", SAHTE_KADRO.yeni);
+      await page.selectOption("#yk-rol", "operations");
+      await page.getByRole("button", { name: /Oluştur ve davet üret/ }).click();
+      await page.waitForSelector("#davet-url");
+      /**
+       * ⚠ Gerçek token'ı SAHTE bir değerle değiştir. Görsel repoya girdiği için
+       * gerçek bir davet bağlantısı burada kalamaz.
+       */
+      await page.evaluate((sahte) => {
+        const alan = document.querySelector("#davet-url");
+        if (alan) alan.value = sahte;
+      }, SAHTE_TOKEN_URL);
+    } },
+  { file: "33-kullanici-detay-1440x1000.png", path: `/kullanicilar/${opsId}`, w: 1440, h: 1000, auth: "sa" },
+  { file: "34-rol-stepup-1440x1000.png", path: `/kullanicilar/${opsId}`, w: 1440, h: 1000, auth: "sa",
+    async hazirla(page) {
+      await page.selectOption('select[aria-label="Rol"]', "member");
+      await page.getByRole("button", { name: "Rolü değiştir" }).click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  { file: "35-davet-bekleyen-1440x1000.png", path: `/kullanicilar/${bekleyenId}`, w: 1440, h: 1000, auth: "sa" },
+  { file: "36-pasif-kullanici-1440x1000.png", path: `/kullanicilar/${pasifId}`, w: 1440, h: 1000, auth: "sa" },
+  { file: "37-kullanicilar-fin-gorunum-1440x900.png", path: "/kullanicilar", w: 1440, h: 900, auth: "fin" },
+  { file: "38-kullanicilar-mobil-375x812.png", path: "/kullanicilar", w: 375, h: 812, auth: "sa" },
+  { file: "39-kullanici-detay-mobil-375x950.png", path: `/kullanicilar/${opsId}`, w: 375, h: 950, auth: "sa" },
+);
 
 const browser = await chromium.launch();
 try {
@@ -202,6 +307,10 @@ try {
     await page.evaluate(
       () => new Promise((c) => requestAnimationFrame(() => requestAnimationFrame(c))),
     );
+
+    // Ekran görüntüsünden önce sayfayı istenen duruma getir (form doldurma,
+    // pencere açma, sahte token yerleştirme…)
+    if (shot.hazirla) await shot.hazirla(page);
 
     if (shot.openDrawer) {
       // React hidrasyonu bitmeden yapılan tıklama kaybolur; açılana kadar dene.
