@@ -18,8 +18,28 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const PUBLIC_PREFIXES = ["/giris", "/api/auth", "/wireframe", "/davet", "/api/v1/davet"];
 
+/**
+ * Davet akışının tamamı — `/davet/<token>`, temiz `/davet` sayfası ve kabul ucu.
+ *
+ * Bu yollarda `Referrer-Policy: no-referrer` ZORUNLUDUR: token URL'de geçtiği
+ * için, sayfadan çıkılan herhangi bir bağlantı ya da yüklenen bir kaynak
+ * Referer başlığında token'ı taşırdı. Başlık tek yerden verilir ki rotalardan
+ * biri unutulduğunda koruma düşmesin.
+ */
+const DAVET_PREFIXES = ["/davet", "/api/v1/davet"];
+
+function davetBasliklari(yanit: NextResponse): NextResponse {
+  yanit.headers.set("Referrer-Policy", "no-referrer");
+  yanit.headers.set("Cache-Control", "no-store");
+  return yanit;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  if (DAVET_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))) {
+    return davetBasliklari(NextResponse.next());
+  }
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();

@@ -905,7 +905,130 @@ console.log("\n═══ 18. 2FA sıfırlama ═══");
 }
 
 // ═══════════════════════════════════════════════════════════════════
-console.log("\n═══ 19. Denetim izi ve sır sızıntısı ═══");
+console.log("\n═══ 19. Detay ucunda rol bazlı alan görünürlüğü ═══");
+// ═══════════════════════════════════════════════════════════════════
+{
+  // FIN ve OPS'un 2FA'sı sıfırlandığı için oturumları yenilenir
+  const fin2 = client();
+  await girisYap(fin2, "finance@example.com", PAROLA, true);
+  const ops2 = client();
+  await girisYap(ops2, "operations@example.com");
+
+  const hedefId = (
+    await sql.query("SELECT id FROM users WHERE email = 'member@example.com'")
+  ).rows[0].id;
+
+  const finDetay = await fin2.get(`/api/v1/users/${hedefId}`);
+  check("FIN detay ucunu okuyabiliyor", finDetay.status === 200, `HTTP ${finDetay.status}`);
+  const f = finDetay.json?.user ?? {};
+  check(
+    "FIN yalnız ad, e-posta, rol ve aktifliği görüyor",
+    Object.keys(f).sort().join(",") === "email,fullName,id,isActive,role,status",
+    Object.keys(f).join(","),
+  );
+
+  const opsDetay = await ops2.get(`/api/v1/users/${hedefId}`);
+  check("OPS detay ucunu okuyabiliyor", opsDetay.status === 200, `HTTP ${opsDetay.status}`);
+  const o = opsDetay.json?.user ?? {};
+  check(
+    "OPS yalnız izin verilen temel bilgileri görüyor",
+    Object.keys(o).sort().join(",") === "email,fullName,id,phone,role",
+    Object.keys(o).join(","),
+  );
+  check(
+    "OPS aktiflik ve durum göremiyor",
+    !("isActive" in o) && !("status" in o),
+  );
+
+  const memDetay = await mem.get(`/api/v1/users/${hedefId}`);
+  check("MEM detay ucunda 404 alıyor", memDetay.status === 404, `HTTP ${memDetay.status}`);
+
+  /** Hiçbir rolün yanıtında hassas alan bulunmamalı. */
+  const YASAK = [
+    "tokenHash", "token_hash", "cookieHash", "cookie_hash", "token",
+    "password", "passwordHash", "totpSecret", "two_factor", "sessionId",
+    "auth_session", "auditLogs", "ipAddress", "ip_address",
+  ];
+  for (const [ad, yanit] of [
+    ["SA", await sa.get(`/api/v1/users/${hedefId}`)],
+    ["FIN", finDetay],
+    ["OPS", opsDetay],
+  ]) {
+    const govde = JSON.stringify(yanit.json ?? {});
+    const bulunan = YASAK.filter((k) => govde.includes(k));
+    check(`${ad} detay yanıtında hassas alan yok`, bulunan.length === 0, bulunan.join(","));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ 20. Kabul ucunda hız sınırı ═══");
+// ═══════════════════════════════════════════════════════════════════
+{
+  const c = client();
+  const kodlar = [];
+  let retryAfter = null;
+  // 6 deneme: ilk 5'i sınır içinde, 6.'sı takılmalı
+  for (let i = 0; i < 6; i++) {
+    const r = await c.post("/api/v1/davet/kabul", { password: YENI_PAROLA });
+    kodlar.push(r.status);
+    if (r.status === 429) retryAfter = r.headers.get("retry-after");
+  }
+  check(
+    "6. deneme hız sınırına takıldı (60 sn / 5)",
+    kodlar[5] === 429,
+    kodlar.join(","),
+  );
+  check("İlk 5 deneme sınıra takılmadı", kodlar.slice(0, 5).every((k) => k !== 429));
+  check("429 yanıtında Retry-After var", retryAfter !== null && Number(retryAfter) > 0, String(retryAfter));
+
+  // Geçerli bir davetle gelen BAŞKA bir IP etkilenmemeli (sınır IP bazlı)
+  const olustur = await sa.post("/api/v1/users", {
+    email: mail("hiz"),
+    fullName: "Sahte Hiz",
+    role: "member",
+  });
+  const baskaIp = client();
+  await baskaIp.get(`/davet/${olustur.json.invitation.token}`);
+  const kabul = await baskaIp.post("/api/v1/davet/kabul", { password: YENI_PAROLA });
+  check("Sınır IP bazlı — başka IP etkilenmedi", kabul.status === 200, `HTTP ${kabul.status}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ 21. Referrer-Policy: no-referrer ═══");
+// ═══════════════════════════════════════════════════════════════════
+{
+  const olustur = await sa.post("/api/v1/users", {
+    email: mail("ref"),
+    fullName: "Sahte Referrer",
+    role: "member",
+  });
+  const tok = olustur.json.invitation.token;
+  const c = client();
+
+  const yonlendirme = await c.get(`/davet/${tok}`);
+  check(
+    "/davet/<token> yönlendirmesinde no-referrer",
+    yonlendirme.headers.get("referrer-policy") === "no-referrer",
+    yonlendirme.headers.get("referrer-policy") ?? "yok",
+  );
+
+  const sayfa = await c.get("/davet");
+  check(
+    "Temiz /davet sayfasında no-referrer",
+    sayfa.headers.get("referrer-policy") === "no-referrer",
+    sayfa.headers.get("referrer-policy") ?? "yok",
+  );
+
+  const kabul = await c.post("/api/v1/davet/kabul", { password: YENI_PAROLA });
+  check(
+    "Kabul yanıtında no-referrer",
+    kabul.headers.get("referrer-policy") === "no-referrer",
+    kabul.headers.get("referrer-policy") ?? "yok",
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ 22. Denetim izi ve sır sızıntısı ═══");
 // ═══════════════════════════════════════════════════════════════════
 {
   const { rows: adet } = await sql.query(

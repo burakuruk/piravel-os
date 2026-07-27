@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { PageShell } from "@/components/layout/page-shell";
 import { requireUser } from "@/lib/authz";
 import { kullaniciYonetebilirMi } from "@/lib/user-admin";
 import { YeniKullaniciFormu } from "./yeni-kullanici-formu";
@@ -10,7 +11,7 @@ export default async function YeniKullaniciPage() {
   if (!kullaniciYonetebilirMi(user.role)) notFound();
 
   return (
-    <div className="max-w-[560px]">
+    <PageShell className="max-w-[720px]">
       <h1 className="font-display text-2xl font-semibold text-ink-900">Yeni kullanıcı</h1>
       <div className="mt-1 h-0.5 w-10 bg-gold-500" />
       <p className="mt-2 mb-6 text-sm text-ink-400">
@@ -18,6 +19,6 @@ export default async function YeniKullaniciPage() {
         bağlantısını kullanarak kendisi aktifleştirir.
       </p>
       <YeniKullaniciFormu />
-    </div>
+    </PageShell>
   );
 }

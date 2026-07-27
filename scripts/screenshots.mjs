@@ -203,6 +203,14 @@ async function kullaniciFixtureleri() {
   await sql.query("DELETE FROM auth_user WHERE email = ANY($1)", [mails]);
   await sql.query("DELETE FROM users WHERE email = ANY($1)", [mails]);
 
+  /**
+   * `verify-users.mjs`'in ürettiği geçici kullanıcılar (`du-*`). Çöken bir
+   * doğrulama koşusu bunları bırakabilir ve liste görseline sızarlar —
+   * görsellerde yalnız okunabilir, sınırlı bir sahte kadro bulunmalı.
+   */
+  await sql.query("DELETE FROM auth_user WHERE email LIKE 'du-%@example.com'");
+  await sql.query("DELETE FROM users WHERE email LIKE 'du-%@example.com'");
+
   const kur = async (email, ad, rol, aktif, aktiflesmis) => {
     const { rows } = await sql.query("SELECT gen_random_uuid() AS id");
     const id = rows[0].id;

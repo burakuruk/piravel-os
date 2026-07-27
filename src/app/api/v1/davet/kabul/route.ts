@@ -2,7 +2,9 @@ import { cookies, headers as gelenBasliklar } from "next/headers";
 import { govdeOku, rota, yazmaIstegiDogrula } from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { auth } from "@/lib/auth";
+import { MESAJ } from "@/lib/auth-messages";
 import { isTwoFactorRequired, type UserRole } from "@/lib/auth-policy";
+import { hizSiniri } from "@/lib/rate-limit";
 import { davetCereziSil } from "@/lib/davet-cerez";
 import {
   DavetKullanilamaz,
@@ -29,6 +31,32 @@ export async function POST(request: Request) {
   return rota(async () => {
     await yazmaIstegiDogrula(request);
     const rc = buildRequestContext(await gelenBasliklar());
+
+    /**
+     * ⚠ Hız sınırı, davet HİÇ ARANMADAN önce uygulanır.
+     *
+     * Sıra önemlidir: önce davet aransaydı, geçerli ve geçersiz token'lar
+     * farklı zamanlarda sınıra takılır ve yanıt süresi bir varlık oracle'ı
+     * üretirdi. Sayaç yalnız IP'ye bakar; hangi davetin denendiğini bilmez.
+     */
+    const hiz = await hizSiniri({
+      kapsam: "davet-kabul",
+      ip: rc.ipAddress,
+      limit: 5,
+      pencereSn: 60,
+    });
+    if (!hiz.izinli) {
+      return Response.json(
+        { error: { code: "TOO_MANY_REQUESTS", message: MESAJ.cokFazlaDeneme } },
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(hiz.yenidenDeneSn),
+            "Referrer-Policy": "no-referrer",
+          },
+        },
+      );
+    }
 
     const cerezDeposu = await cookies();
     const cerezKimligi = cerezDeposu.get(DAVET_CEREZ_ADI)?.value ?? "";
@@ -62,6 +90,10 @@ export async function POST(request: Request) {
       });
       // Çerez KABUL ANINDA silinir — sunucu tarafı eşleme zaten düştü
       yanit.headers.append("Set-Cookie", davetCereziSil());
+      // Davet akışının HER yanıtında: token'ın bir sonraki isteğin
+      // Referer'ında sızmaması için (yanıt gövdesi taşımasa da sayfa
+      // geçişlerinde bu başlık geçerli kalır)
+      yanit.headers.set("Referrer-Policy", "no-referrer");
       return yanit;
     } catch (e) {
       if (e instanceof DavetKullanilamaz) {

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PageShell } from "@/components/layout/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { requireUser } from "@/lib/authz";
 import { kullaniciDetayi, kullaniciYonetebilirMi } from "@/lib/user-admin";
@@ -33,7 +34,7 @@ export default async function KullaniciDetayPage({
   const kendisi = String(kayit.id) === user.id;
 
   return (
-    <div className="max-w-[720px]">
+    <PageShell className="max-w-[860px]">
       <Link href="/kullanicilar" className="text-sm text-navy-500 hover:underline">
         ← Kullanıcılar
       </Link>
@@ -114,6 +115,6 @@ export default async function KullaniciDetayPage({
           kendisi={kendisi}
         />
       )}
-    </div>
+    </PageShell>
   );
 }

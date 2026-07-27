@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { PageShell } from "@/components/layout/page-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { requireUser } from "@/lib/authz";
@@ -23,7 +24,7 @@ export default async function KullanicilarPage() {
   const yonetebilir = kullaniciYonetebilirMi(user.role);
 
   return (
-    <div>
+    <PageShell>
       <div className="mb-6 flex items-end justify-between">
         <div>
           <h1 className="font-display text-2xl font-semibold text-ink-900">Kullanıcılar</h1>
@@ -102,6 +103,6 @@ export default async function KullanicilarPage() {
           </tbody>
         </table>
       </div>
-    </div>
+    </PageShell>
   );
 }
