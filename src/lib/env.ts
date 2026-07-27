@@ -89,3 +89,25 @@ export function betterAuthSecret(): string {
   );
   return betterAuthSecretOnbellek;
 }
+
+let invitePepperOnbellek: string | null = null;
+
+/**
+ * Davet token'larının HMAC pepper'ı.
+ *
+ * ⚠ BETTER_AUTH_SECRET'e fallback YOKTUR ve olmamalıdır: davet sırrı ile
+ * oturum sırrı ayrı tutulur, biri sızarsa diğeri düşmez. Ortak bir sır
+ * kullanılsaydı oturum sırrının rotasyonu tüm bekleyen davetleri sessizce
+ * doğrulanamaz hâle getirirdi (ve tersi).
+ *
+ * Rotasyon: pepper değişince mevcut bekleyen davetler doğrulanamaz olur.
+ * Prosedür — önce tüm `pending` davetler revoke edilir, pepper değiştirilir,
+ * kullanıcılara yeni davet üretilir.
+ */
+export function inviteTokenPepper(): string {
+  invitePepperOnbellek ??= sirDogrula(
+    "INVITE_TOKEN_PEPPER",
+    process.env.INVITE_TOKEN_PEPPER,
+  );
+  return invitePepperOnbellek;
+}

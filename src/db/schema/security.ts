@@ -19,6 +19,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import { idCol } from "./helpers";
@@ -121,6 +122,60 @@ export const authReauthentication = pgTable(
   (t) => [
     index("idx_reauth_session").on(t.sessionId, t.expiresAt),
     index("idx_reauth_user").on(t.userId),
+  ],
+);
+
+/**
+ * Kullanıcı davetleri — hesabı olan ama henüz parolası olmayan kişiyi
+ * aktifleştiren tek yol.
+ *
+ * ⚠ HAM TOKEN BU TABLODA BULUNMAZ. Yalnız HMAC-SHA256(token,
+ * INVITE_TOKEN_PEPPER) saklanır; veritabanı sızsa bile geçerli bir davet
+ * bağlantısı üretilemez. Pepper oturum sırrından ayrıdır — biri sızarsa
+ * diğeri düşmez.
+ *
+ * Durum türetilir, ayrı bir kolon tutulmaz:
+ *   accepted (accepted_at dolu) · revoked (revoked_at dolu)
+ *   expired (expires_at geçmiş) · pending (diğer hepsi)
+ */
+export const userInvitations = pgTable(
+  "user_invitations",
+  {
+    id: idCol(),
+    /** auth_user.id — kullanıcı silinirse davet de silinir (FK CASCADE) */
+    userId: text("user_id").notNull(),
+    /** HMAC-SHA256(token, INVITE_TOKEN_PEPPER) — düz SHA256 birleştirme değil */
+    tokenHash: text("token_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    revokedById: uuid("revoked_by_id"),
+    /**
+     * Kabul ekranının çerezi. Ham token URL'den düşürüldükten sonra formu bu
+     * kimlik taşır; çerezin içinde de yalnız rastgele bir değer bulunur, onun
+     * da yalnız HMAC'i burada tutulur.
+     */
+    cookieHash: text("cookie_hash"),
+    cookieExpiresAt: timestamp("cookie_expires_at", { withTimezone: true }),
+    createdById: uuid("created_by_id"),
+    createdRequestId: text("created_request_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("uq_invitation_token_hash").on(t.tokenHash),
+    uniqueIndex("uq_invitation_cookie_hash")
+      .on(t.cookieHash)
+      .where(sql`${t.cookieHash} IS NOT NULL`),
+    /**
+     * Son perde — tek başına yeterli DEĞİL: süresi dolmuş davet de burada
+     * "açık" sayılır, çünkü now() partial index predicate'inde kullanılamaz.
+     * Asıl kuralı uygulama katmanı işletir (bkz. invitations.ts).
+     */
+    uniqueIndex("uq_invitation_one_open_per_user")
+      .on(t.userId)
+      .where(sql`${t.acceptedAt} IS NULL AND ${t.revokedAt} IS NULL`),
+    index("idx_invitation_user").on(t.userId),
   ],
 );
 

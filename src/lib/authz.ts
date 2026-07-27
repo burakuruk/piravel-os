@@ -21,6 +21,14 @@ export interface CurrentUser {
   twoFactorEnabled: boolean;
   /** SA/FIN olup 2FA kurmamış kullanıcı: yalnız kurulum sayfalarına erişebilir */
   mustSetupTwoFactor: boolean;
+  /**
+   * Bu isteğin oturum kimliği (auth_session.id).
+   *
+   * Step-up kayıtları oturuma bağlıdır; kritik işlem uçları `requireStepUp`'a
+   * bunu verir. Kullanıcı kimliğiyle çalışılsaydı, bir oturumda alınan
+   * yükseltme aynı kullanıcının BAŞKA bir oturumunda da geçerli olurdu.
+   */
+  sessionId: string;
 }
 
 export class UnauthenticatedError extends Error {
@@ -40,7 +48,7 @@ export class ForbiddenError extends Error {
 /** Oturumdaki kullanıcıyı DB'den taze okur. Oturum yoksa null döner. */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) return null;
+  if (!session?.user || !session.session) return null;
 
   const rows = await db
     .select({
@@ -70,6 +78,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
     isActive: row.isActive,
     twoFactorEnabled,
     mustSetupTwoFactor: isTwoFactorRequired(row.role) && !twoFactorEnabled,
+    sessionId: session.session.id,
   };
 }
 

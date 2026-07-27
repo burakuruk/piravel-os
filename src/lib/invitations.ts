@@ -1,0 +1,227 @@
+import { createHmac, randomBytes } from "node:crypto";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { db, type Db } from "@/db";
+import { userInvitations } from "@/db/schema";
+import { inviteTokenPepper } from "@/lib/env";
+
+/**
+ * Davet yaşam döngüsü — token üretimi, doğrulama ve durum yönetimi.
+ *
+ * ⚠ PRD §6.3: Ham davet token'ı yalnız iki yerde bulunur — oluşturma
+ * yanıtında (bir kez) ve kullanıcının e-postasındaki bağlantıda. Veritabanına,
+ * log'a, audit'e, Sentry'ye veya ekran görüntüsüne ASLA yazılmaz. Saklanan
+ * değer HMAC-SHA256(token, INVITE_TOKEN_PEPPER)'dir.
+ *
+ * Neden düz `sha256(pepper + token)` değil de HMAC: birleştirme, temeldeki
+ * Merkle–Damgård yapısı yüzünden uzunluk uzatma saldırısına açıktır ve
+ * pepper/token sınırı belirsizdir. HMAC bu sınırı tanımlar.
+ */
+
+/** Davetin geçerlilik süresi. */
+export const DAVET_GECERLILIK_SAAT = 72;
+
+/**
+ * Kabul ekranı çerezinin ömrü. Davetin kendisinden (72 saat) çok daha kısa:
+ * çerez yalnız "bağlantıya az önce tıklandı" bilgisini taşır, davetin
+ * kendisini temsil etmez.
+ */
+export const DAVET_CEREZ_SURESI_SN = 10 * 60;
+
+/** Çerez adı — Path=/davet ile sınırlanır. */
+export const DAVET_CEREZ_ADI = "piravel_davet";
+
+/** Dışarıya tek tip yanıt: hangi durumda olduğu kullanıcıya AÇIKLANMAZ. */
+export const DAVET_HATA_KODU = "INVITATION_UNAVAILABLE";
+export const DAVET_HATA_MESAJI =
+  "Bu davet bağlantısı kullanılamıyor. Yöneticinizden yeni bir bağlantı isteyin.";
+
+export type DavetDurumu = "pending" | "accepted" | "revoked" | "expired";
+
+export interface DavetKaydi {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  cookieExpiresAt: Date | null;
+}
+
+/**
+ * Durum kolonda tutulmaz, türetilir — tek bir "status" kolonu, zaman geçtikçe
+ * gerçekle uyumsuz kalırdı (expired olması için kimsenin yazması gerekmez).
+ *
+ * Sıra önemlidir: kabul edilmiş bir davet süresi geçse de "accepted" kalır,
+ * iptal edilmiş bir davet süresi geçse de "revoked" kalır. Aksi hâlde aynı
+ * kayıt zamanla durum değiştirmiş gibi görünürdü.
+ */
+export function davetDurumu(kayit: DavetKaydi, simdi: Date = new Date()): DavetDurumu {
+  if (kayit.acceptedAt) return "accepted";
+  if (kayit.revokedAt) return "revoked";
+  if (kayit.expiresAt.getTime() <= simdi.getTime()) return "expired";
+  return "pending";
+}
+
+/** Davet yalnız `pending` iken kabul edilebilir. */
+export function kabulEdilebilirMi(kayit: DavetKaydi, simdi: Date = new Date()): boolean {
+  return davetDurumu(kayit, simdi) === "pending";
+}
+
+/** Çerez eşlemesi ayrıca kendi (çok daha kısa) süresine tabidir. */
+export function cerezGecerliMi(kayit: DavetKaydi, simdi: Date = new Date()): boolean {
+  if (!kayit.cookieExpiresAt) return false;
+  return kayit.cookieExpiresAt.getTime() > simdi.getTime();
+}
+
+/** 32 bayt rastgele → base64url. Tahmin edilemez ve URL'de güvenlidir. */
+export function davetTokenUret(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/** Çerezde taşınan rastgele davet oturum kimliği — token'dan BAĞIMSIZDIR. */
+export function cerezKimligiUret(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+/**
+ * Token ve çerez kimliği aynı pepper'ı kullanır ama farklı alan adlarıyla
+ * (domain separation): birinin hash'i diğerinin yerine geçemez.
+ */
+function hmac(alan: string, deger: string): string {
+  return createHmac("sha256", inviteTokenPepper()).update(`${alan}:${deger}`).digest("hex");
+}
+
+export function davetTokenHash(token: string): string {
+  return hmac("invite_token", token);
+}
+
+export function cerezHash(kimlik: string): string {
+  return hmac("invite_cookie", kimlik);
+}
+
+/** Token biçimi kabaca doğru mu — DB'ye gitmeden bariz çöpü eler. */
+export function tokenBicimiGecerliMi(token: unknown): token is string {
+  return typeof token === "string" && /^[A-Za-z0-9_-]{16,256}$/.test(token);
+}
+
+const SECILEN_ALANLAR = {
+  id: userInvitations.id,
+  userId: userInvitations.userId,
+  expiresAt: userInvitations.expiresAt,
+  acceptedAt: userInvitations.acceptedAt,
+  revokedAt: userInvitations.revokedAt,
+  cookieExpiresAt: userInvitations.cookieExpiresAt,
+};
+
+type Islem = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/**
+ * Kullanıcının AÇIK (kabul/iptal edilmemiş) tüm davetlerini iptal eder —
+ * süresi dolmuş olanlar dahil.
+ *
+ * ⚠ "Süresi dolmuş olanlar dahil" kısmı kritiktir: `uq_invitation_one_open_per_user`
+ * index'i now() kullanamadığı için süresi dolmuş bir daveti hâlâ "açık" sayar.
+ * Yalnız index'e güvenilseydi, süresi dolmuş tek bir davet o kullanıcı için
+ * yeni davet üretimini KALICI olarak kilitlerdi.
+ */
+export async function acikDavetleriIptalEt(
+  islem: Islem,
+  userId: string,
+  revokedById: string | null,
+): Promise<number> {
+  const silinen = await islem
+    .update(userInvitations)
+    .set({
+      revokedAt: sql`now()`,
+      revokedById,
+      updatedAt: sql`now()`,
+      // Eşleme düşer: iptal edilen davetin çerezi de anında geçersizdir
+      cookieHash: null,
+      cookieExpiresAt: null,
+    })
+    .where(
+      and(
+        eq(userInvitations.userId, userId),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.revokedAt),
+      ),
+    )
+    .returning({ id: userInvitations.id });
+  return silinen.length;
+}
+
+/**
+ * Yeni davet üretir. Varsa önceki açık davetler AYNI transaction içinde
+ * iptal edilir — böylece eski bağlantı anında geçersizleşir ve iki aktif
+ * davet oluşamaz.
+ *
+ * Ham token yalnız DÖNÜŞ DEĞERİNDE bulunur; çağıran onu bir kez gösterip
+ * bırakmalıdır.
+ */
+export async function davetOlustur(input: {
+  userId: string;
+  createdById: string | null;
+  requestId?: string | null;
+}): Promise<{ invitationId: string; token: string; expiresAt: Date }> {
+  const token = davetTokenUret();
+  const tokenHash = davetTokenHash(token);
+  const expiresAt = new Date(Date.now() + DAVET_GECERLILIK_SAAT * 3600 * 1000);
+
+  const invitationId = await db.transaction(async (tx) => {
+    await acikDavetleriIptalEt(tx, input.userId, input.createdById);
+    const eklenen = await tx
+      .insert(userInvitations)
+      .values({
+        userId: input.userId,
+        tokenHash,
+        expiresAt,
+        createdById: input.createdById,
+        createdRequestId: input.requestId ?? null,
+      })
+      .returning({ id: userInvitations.id });
+    return eklenen[0].id;
+  });
+
+  return { invitationId, token, expiresAt };
+}
+
+/** Ham token ile davet kaydını bulur. Bulunamazsa null — sebep açıklanmaz. */
+export async function davetiTokenIleBul(token: string): Promise<DavetKaydi | null> {
+  if (!tokenBicimiGecerliMi(token)) return null;
+  const rows = await db
+    .select(SECILEN_ALANLAR)
+    .from(userInvitations)
+    .where(eq(userInvitations.tokenHash, davetTokenHash(token)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** Çerezdeki kimlik ile davet kaydını bulur. */
+export async function davetiCerezIleBul(cerezKimligi: string): Promise<DavetKaydi | null> {
+  if (!tokenBicimiGecerliMi(cerezKimligi)) return null;
+  const rows = await db
+    .select(SECILEN_ALANLAR)
+    .from(userInvitations)
+    .where(eq(userInvitations.cookieHash, cerezHash(cerezKimligi)))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/**
+ * Daveti bir çereze bağlar ve çerezde taşınacak ham kimliği döner.
+ *
+ * GET /davet/[token] bunu çağırır, sonra temiz URL'e yönlendirir; böylece ham
+ * token tarayıcı geçmişinde, Referer'da ve sunucu erişim log'unda kalmaz.
+ * Bu adım daveti DEĞİŞTİRMEZ — kabul yalnız POST ile olur.
+ */
+export async function cerezeBagla(invitationId: string): Promise<string> {
+  const cerezKimligi = cerezKimligiUret();
+  await db
+    .update(userInvitations)
+    .set({
+      cookieHash: cerezHash(cerezKimligi),
+      cookieExpiresAt: new Date(Date.now() + DAVET_CEREZ_SURESI_SN * 1000),
+      updatedAt: sql`now()`,
+    })
+    .where(eq(userInvitations.id, invitationId));
+  return cerezKimligi;
+}

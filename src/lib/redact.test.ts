@@ -109,3 +109,44 @@ describe("redact — Sentry kancası", () => {
     expect(serialized).not.toContain("gizli-3");
   });
 });
+
+describe("redact — davet token'ı (Sprint 1 §1)", () => {
+  it("davet anahtarlarını hassas sayar", () => {
+    for (const k of ["invite", "inviteToken", "invite_token", "inviteUrl", "davetToken"]) {
+      expect(isSensitiveKey(k)).toBe(true);
+    }
+  });
+
+  it("/davet/<token> yolundaki token maskelenir, yol görünür kalır", () => {
+    const out = redactString("GET /davet/AbC-123_xyz 200");
+    expect(out).toBe(`GET /davet/${REDACTED} 200`);
+  });
+
+  it("tam URL içinde de maskelenir", () => {
+    const t = "kSm3xQ9-abcDEF_0123456789";
+    const out = redactString(`https://piravel.example/davet/${t}?x=1`);
+    expect(out).not.toContain(t);
+    expect(out).toContain("/davet/");
+  });
+
+  it("metinde birden çok davet bağlantısı geçerse hepsi maskelenir", () => {
+    const out = redactString("/davet/aaaAAA111 ve /davet/bbbBBB222");
+    expect(out).not.toContain("aaaAAA111");
+    expect(out).not.toContain("bbbBBB222");
+  });
+
+  it("davet gövdesi redact()'ten geçince ham token kalmaz", () => {
+    const t = "cokGizliDavetTokeni-123456";
+    const out = redact({
+      url: `/davet/${t}`,
+      inviteToken: t,
+      context: { davetToken: t },
+    });
+    expect(JSON.stringify(out)).not.toContain(t);
+  });
+
+  it("benzeyen ama farklı yollar bozulmaz", () => {
+    expect(redactString("/davetler")).toBe("/davetler");
+    expect(redactString("/api/v1/davet")).toBe("/api/v1/davet");
+  });
+});

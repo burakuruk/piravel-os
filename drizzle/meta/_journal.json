@@ -64,6 +64,13 @@
       "when": 1785108531453,
       "tag": "0008_stepup_and_request_trust",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785150900000,
+      "tag": "0009_user_invitations_and_pending_users",
+      "breakpoints": true
     }
   ]
 }

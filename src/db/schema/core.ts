@@ -66,6 +66,14 @@ export const users = pgTable(
     avatarUrl: text("avatar_url"),
     /** 2FA'nın ne zaman etkinleştirildiği — sır değil, yalnız durum bilgisi */
     totpEnabledAt: timestamp("totp_enabled_at", { withTimezone: true }),
+    /**
+     * Kullanıcının daveti kabul edip parolasını belirlediği an.
+     *
+     * `is_active` tek başına iki farklı durumu ayırt edemez; ayrım burada:
+     *   NULL + is_active=false → hiç aktifleşmemiş, daveti bekliyor
+     *   dolu + is_active=false → aktifti, yönetici pasifleştirdi
+     */
+    activatedAt: timestamp("activated_at", { withTimezone: true }),
     isActive: boolean("is_active").notNull().default(true),
     lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),

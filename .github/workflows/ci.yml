@@ -57,6 +57,7 @@ jobs:
       - name: Koşuya özel auth sırrı üret
         run: |
           echo "BETTER_AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" >> "$GITHUB_ENV"
+          echo "INVITE_TOKEN_PEPPER=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" >> "$GITHUB_ENV"
 
       - name: Typecheck (strict)
         run: npm run typecheck

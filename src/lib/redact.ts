@@ -31,6 +31,13 @@ const SENSITIVE_KEYS = [
   "qr",
   "qrcode",
   "iban",
+  // Davet token'ı bir kimlik bilgisidir: onu gören hesabı ele geçirir
+  "invite",
+  "invitetoken",
+  "invitelink",
+  "inviteurl",
+  "davet",
+  "davettoken",
 ];
 
 export const REDACTED = "[REDACTED]";
@@ -47,9 +54,22 @@ export function isSensitiveKey(key: string): boolean {
 /** otpauth:// URI'leri metin içinde geçse bile temizlenir. */
 const OTPAUTH_PATTERN = /otpauth:\/\/[^\s"'<>]+/gi;
 
+/**
+ * Davet kabul bağlantısı — `/davet/<token>`.
+ *
+ * Bu yol erişim log'unda, Referer başlığında, Sentry'nin `request.url`
+ * alanında ve hata yığınlarında metin olarak geçebilir. Token'ın kendisi bir
+ * kimlik bilgisi olduğu için yalnız yol kısmı bırakılır. Tam URL de (şema +
+ * host) eşleşir; yalnız token parçası maskelenir ki hangi ucun çağrıldığı
+ * hata ayıklamada görülebilsin.
+ */
+const DAVET_URL_PATTERN = /(\/davet\/)[A-Za-z0-9_-]+/g;
+
 /** Metin içinde geçen sırları maskeler (log satırları için). */
 export function redactString(input: string): string {
-  return input.replace(OTPAUTH_PATTERN, REDACTED);
+  return input
+    .replace(OTPAUTH_PATTERN, REDACTED)
+    .replace(DAVET_URL_PATTERN, `$1${REDACTED}`);
 }
 
 /**
