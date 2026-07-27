@@ -35,6 +35,10 @@ jobs:
       DATABASE_ADMIN_URL: postgres://piravel:piravel@localhost:5432/piravel_os
       DATABASE_URL: postgres://piravel_app:piravel_app@localhost:5432/piravel_os
       APP_DB_PASSWORD: piravel_app
+      # Uçtan uca kontroller koşu-kapsamlı audit sorgularına dayanır. Kapı
+      # NODE_ENV'e değil bu bayrağa bağlı olduğu için testler GERÇEK production
+      # sunucusuna karşı koşabilir. Üretim ortamında ASLA set edilmez.
+      AUDIT_TEST_RUN_ID_ENABLED: "1"
 
     steps:
       - uses: actions/checkout@v4
