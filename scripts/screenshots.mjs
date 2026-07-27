@@ -25,9 +25,14 @@ import pg from "pg";
 import { totp } from "./_totp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-for (const line of readFileSync(join(here, "..", ".env"), "utf8").split("\n")) {
-  const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
-  if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+// .env'i bağımlılıksız oku (Node 22 --env-file'a alternatif, cross-platform)
+try {
+  for (const line of readFileSync(join(here, "..", ".env"), "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, "");
+  }
+} catch {
+  /* .env yoksa ortam değişkenleri kullanılır (CI) */
 }
 const outDir = join(here, "..", "docs", "previews");
 mkdirSync(outDir, { recursive: true });
