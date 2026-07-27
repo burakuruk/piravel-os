@@ -47,6 +47,13 @@ jobs:
       - name: Bağımlılıklar
         run: npm ci
 
+      # BETTER_AUTH_SECRET'in kodda varsayılanı YOKTUR (src/lib/env.ts): eksikse
+      # uygulama bilerek başlamaz. Değer koşu başına üretilir ve depoya yazılmaz —
+      # workflow dosyasına sabit bir sır gömmek, onu herkese açık hâle getirirdi.
+      - name: Koşuya özel auth sırrı üret
+        run: |
+          echo "BETTER_AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" >> "$GITHUB_ENV"
+
       - name: Typecheck (strict)
         run: npm run typecheck
 
