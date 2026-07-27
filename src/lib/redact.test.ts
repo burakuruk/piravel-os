@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isSensitiveKey, redact, REDACTED, redactString, sentryBeforeSend } from "./redact";
+import { isSensitiveKey, maskeliIp, redact, REDACTED, redactString, sentryBeforeSend } from "./redact";
 
 describe("redact — hassas alan tespiti (PRD §6.3)", () => {
   it("2FA sırlarını hassas sayar", () => {
@@ -148,5 +148,38 @@ describe("redact — davet token'ı (Sprint 1 §1)", () => {
   it("benzeyen ama farklı yollar bozulmaz", () => {
     expect(redactString("/davetler")).toBe("/davetler");
     expect(redactString("/api/v1/davet")).toBe("/api/v1/davet");
+  });
+});
+
+describe("maskeliIp — denetim izinde tam IP yok (PRD §6.3)", () => {
+  it("IPv4'ün ana bilgisayar kısmı düşer, ağ öneki kalır", () => {
+    expect(maskeliIp("198.51.100.7")).toBe("198.51.100.0/24");
+    expect(maskeliIp("10.0.0.255")).toBe("10.0.0.0/24");
+  });
+
+  it("maskelenen değer artık tam IPv4 desenine uymaz", () => {
+    const m = maskeliIp("203.0.113.12");
+    expect(m).not.toBeNull();
+    expect(/^\d+\.\d+\.\d+\.\d+$/.test(m ?? "")).toBe(false);
+  });
+
+  it("IPv6 /48 önekine indirgenir", () => {
+    expect(maskeliIp("2001:db8:abcd:1234::1")).toBe("2001:db8:abcd::/48");
+  });
+
+  it("x-forwarded-for zincirinden yalnız ilk adres alınır", () => {
+    expect(maskeliIp("198.51.100.7, 70.41.3.18, 150.172.238.178")).toBe("198.51.100.0/24");
+  });
+
+  it("boş ve tanınmayan değerler saklanmaz", () => {
+    expect(maskeliIp(null)).toBeNull();
+    expect(maskeliIp(undefined)).toBeNull();
+    expect(maskeliIp("")).toBeNull();
+    expect(maskeliIp("   ")).toBeNull();
+    expect(maskeliIp("bilinmeyen")).toBeNull();
+  });
+
+  it("aynı ağdaki iki farklı adres aynı maskeye düşer (kişiye işaret etmez)", () => {
+    expect(maskeliIp("192.0.2.5")).toBe(maskeliIp("192.0.2.200"));
   });
 });

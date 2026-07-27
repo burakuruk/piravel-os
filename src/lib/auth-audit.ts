@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { auditLogs } from "@/db/schema";
-import { redact } from "@/lib/redact";
+import { maskeliIp, redact } from "@/lib/redact";
 
 /**
  * Kimlik doğrulama olaylarının audit köprüsü — docs/02 §6.
@@ -57,7 +57,8 @@ export async function writeAuthAudit(input: AuthAuditInput): Promise<void> {
       entityId: null,
       entityLabel: LABELS[input.action],
       changes: input.context ? redact(input.context) : null,
-      ipAddress: input.ipAddress ?? null,
+      // ⚠ Tam IP denetim izine YAZILMAZ (PRD §6.3) — yalnız ağ öneki
+      ipAddress: maskeliIp(input.ipAddress),
       userAgent: input.userAgent ?? null,
       requestId: input.requestId ?? null,
       upstreamRequestId: input.upstreamRequestId ?? null,

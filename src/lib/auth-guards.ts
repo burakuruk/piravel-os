@@ -1,7 +1,7 @@
 import { APIError } from "better-auth/api";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { authAccounts, authUsers } from "@/db/schema";
+import { authAccounts, authUsers, users } from "@/db/schema";
 import { writeAuthAudit } from "@/lib/auth-audit";
 import { MESAJ } from "@/lib/auth-messages";
 import {
@@ -62,8 +62,18 @@ function gecersizKimlikHatasi(): APIError {
 async function kullaniciBul(email: string) {
   if (!email) return null;
   const rows = await db
-    .select({ id: authUsers.id, email: authUsers.email })
+    .select({
+      id: authUsers.id,
+      email: authUsers.email,
+      /**
+       * `users` tablosundan okunur — `auth_user`'da böyle bir alan yok ve
+       * Better Auth aktiflik kavramını hiç bilmez. LEFT JOIN: `users` satırı
+       * bir sebeple yoksa kullanıcı aktif SAYILMAZ (güvenli taraf).
+       */
+      isActive: users.isActive,
+    })
     .from(authUsers)
+    .leftJoin(users, eq(users.id, sql`${authUsers.id}::uuid`))
     .where(eq(authUsers.email, email.trim().toLowerCase()))
     .limit(1);
   return rows[0] ?? null;
@@ -107,6 +117,48 @@ export async function parolaGirisiOncesi(
   if (!user) {
     await sahteParolaDogrulamasi(kripto.verify, kripto.hash, parola);
     return;
+  }
+
+  /**
+   * ⚠ AKTİF OLMAYAN HESAP HİÇ OTURUM AÇAMAZ.
+   *
+   * Better Auth aktiflik kavramını bilmez; `getCurrentUser()` pasif kullanıcıya
+   * null döndürse de bu YETMEZ, çünkü Better Auth'un kendi uçları (parola
+   * değiştirme, 2FA aç/kapat, oturum listesi) bizim kapımızdan geçmez. Kapı
+   * burada, oturum HİÇ oluşmadan önce kapatılır. Aksi hâlde pasifleştirilen
+   * kullanıcı oturumları silinse bile yeniden giriş yapıp yenisini alırdı.
+   *
+   * Bu aynı zamanda davet bekleyen kullanıcıyı da kapsar (is_active=false) —
+   * credential satırının hiç yazılmaması ile birlikte ikinci katman.
+   *
+   * Yanıt, yanlış parolayla AYNI olur: "hesabınız pasif" demek, geçerli bir
+   * e-postayı doğrulayan bir enumeration oracle'ı üretirdi.
+   */
+  if (!user.isActive) {
+    const hash = await parolaHashi(user.id);
+    // Zamanlama farkını kapat: parola yine de doğrulanır, sonuç kullanılmaz
+    if (hash) await kripto.verify({ hash, password: parola }).catch(() => false);
+    else await sahteParolaDogrulamasi(kripto.verify, kripto.hash, parola);
+
+    const rcPasif = buildRequestContext(headers);
+    await denemeKaydet({
+      userId: user.id,
+      email,
+      ip: rcPasif.ipAddress,
+      attemptType: "password",
+      succeeded: false,
+      requestId: rcPasif.requestId,
+      upstreamRequestId: rcPasif.upstreamRequestId,
+      testRunId: rcPasif.testRunId,
+    });
+    await writeAuthAudit({
+      action: "login_failed",
+      actorId: user.id,
+      actorEmail: user.email,
+      ...iz(rcPasif),
+      context: { neden: "hesap_aktif_degil" },
+    });
+    throw gecersizKimlikHatasi();
   }
 
   const kilit = await parolaKilidi(user.id);

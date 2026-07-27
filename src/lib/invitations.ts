@@ -1,8 +1,9 @@
 import { createHmac, randomBytes } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { db, type Db } from "@/db";
-import { userInvitations } from "@/db/schema";
+import { authAccounts, userInvitations, users } from "@/db/schema";
 import { inviteTokenPepper } from "@/lib/env";
+import { newId } from "@/lib/ids";
 
 /**
  * Davet yaşam döngüsü — token üretimi, doğrulama ve durum yönetimi.
@@ -213,6 +214,153 @@ export async function davetiCerezIleBul(cerezKimligi: string): Promise<DavetKayd
  * token tarayıcı geçmişinde, Referer'da ve sunucu erişim log'unda kalmaz.
  * Bu adım daveti DEĞİŞTİRMEZ — kabul yalnız POST ile olur.
  */
+/** Kabul edilen parolanın en küçük uzunluğu (seed script'iyle aynı kural). */
+export const MIN_PAROLA_UZUNLUGU = 12;
+
+export class DavetKullanilamaz extends Error {
+  readonly code = DAVET_HATA_KODU;
+  /** Gerçek sebep YALNIZ audit'e yazılır; dışarıya tek tip mesaj döner. */
+  constructor(readonly sebep: string) {
+    super(DAVET_HATA_MESAJI);
+    this.name = "DavetKullanilamaz";
+  }
+}
+
+/**
+ * Daveti kabul eder — parola belirleme, aktivasyon ve kabul TEK transaction.
+ *
+ * ⚠ Parola hash'i Better Auth'un KENDİ mekanizmasıyla üretilir
+ * (`auth.$context.password.hash`); burada elle hash yazılmaz. Better Auth'un
+ * yalnız hash'leyicisi kullanıldığı için satırı BİZ yazarız — böylece
+ * credential, aktivasyon ve kabul aynı transaction'a girer ve yarı aktif
+ * kullanıcı hiç oluşamaz. (Better Auth'un kendi sign-up ucu çağrılsaydı kendi
+ * bağlantısını kullanır ve transaction'ımızın dışında kalırdı.)
+ *
+ * Hash'leme transaction'dan ÖNCE yapılır: argon2 yüzlerce milisaniye sürer ve
+ * bu süre boyunca satır kilidi tutmak eşzamanlı istekleri gereksiz bekletirdi.
+ */
+export async function davetiKabulEt(input: {
+  cerezKimligi: string;
+  parola: string;
+  parolaHashle: (parola: string) => Promise<string>;
+  requestId?: string | null;
+}): Promise<{ userId: string; email: string; role: string }> {
+  if (typeof input.parola !== "string" || input.parola.length < MIN_PAROLA_UZUNLUGU) {
+    throw new DavetKullanilamaz("parola_kisa");
+  }
+
+  const aday = await davetiCerezIleBul(input.cerezKimligi);
+  if (!aday) throw new DavetKullanilamaz("cerez_eslesmedi");
+  if (!cerezGecerliMi(aday)) throw new DavetKullanilamaz("cerez_suresi_doldu");
+  if (!kabulEdilebilirMi(aday)) throw new DavetKullanilamaz(davetDurumu(aday));
+
+  const hash = await input.parolaHashle(input.parola);
+
+  return db.transaction(async (tx) => {
+    /**
+     * Satır kilidi: iki eşzamanlı kabul isteğinden yalnız biri geçmeli.
+     * Kilit alındıktan SONRA durum yeniden okunur — ilk istek accepted_at'i
+     * yazmışsa ikincisi burada elenir ve hiçbir yeni etki üretmez.
+     */
+    const kilitli = await tx
+      .select({
+        id: userInvitations.id,
+        userId: userInvitations.userId,
+        expiresAt: userInvitations.expiresAt,
+        acceptedAt: userInvitations.acceptedAt,
+        revokedAt: userInvitations.revokedAt,
+        cookieExpiresAt: userInvitations.cookieExpiresAt,
+      })
+      .from(userInvitations)
+      .where(eq(userInvitations.id, aday.id))
+      .for("update")
+      .limit(1);
+
+    const kayit = kilitli[0];
+    if (!kayit) throw new DavetKullanilamaz("kayit_yok");
+    if (!cerezGecerliMi(kayit)) throw new DavetKullanilamaz("cerez_suresi_doldu");
+    if (!kabulEdilebilirMi(kayit)) throw new DavetKullanilamaz(davetDurumu(kayit));
+
+    const kullanici = await tx
+      .select({ id: users.id, email: users.email, role: users.role })
+      .from(users)
+      .where(eq(users.id, kayit.userId))
+      .limit(1);
+    if (!kullanici[0]) throw new DavetKullanilamaz("kullanici_yok");
+
+    /**
+     * Credential satırı: normalde hiç yoktur (davet edilen kullanıcıya parola
+     * yazılmaz). Yine de UPSERT kullanılır — veri elle bozulmuş ya da önceki
+     * bir deneme yarıda kalmışsa kabul yine tamamlanabilsin diye.
+     */
+    const mevcut = await tx
+      .select({ id: authAccounts.id })
+      .from(authAccounts)
+      .where(
+        and(
+          eq(authAccounts.userId, kayit.userId),
+          eq(authAccounts.providerId, "credential"),
+        ),
+      )
+      .limit(1);
+
+    if (mevcut[0]) {
+      await tx
+        .update(authAccounts)
+        .set({ password: hash, updatedAt: sql`now()` })
+        .where(eq(authAccounts.id, mevcut[0].id));
+    } else {
+      await tx.insert(authAccounts).values({
+        id: newId(),
+        userId: kayit.userId,
+        accountId: kayit.userId,
+        providerId: "credential",
+        password: hash,
+      });
+    }
+
+    await tx
+      .update(users)
+      .set({
+        isActive: true,
+        activatedAt: sql`now()`,
+        passwordChangedAt: sql`now()`,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(users.id, kayit.userId));
+
+    await tx
+      .update(userInvitations)
+      .set({
+        acceptedAt: sql`now()`,
+        updatedAt: sql`now()`,
+        // Çerez eşlemesi kabul anında DÜŞER — bağlantı ikinci kez işlemez
+        cookieHash: null,
+        cookieExpiresAt: null,
+      })
+      .where(eq(userInvitations.id, kayit.id));
+
+    // Aynı kullanıcının başka açık daveti varsa o da kapanır
+    await tx
+      .update(userInvitations)
+      .set({ revokedAt: sql`now()`, updatedAt: sql`now()`, cookieHash: null, cookieExpiresAt: null })
+      .where(
+        and(
+          eq(userInvitations.userId, kayit.userId),
+          ne(userInvitations.id, kayit.id),
+          isNull(userInvitations.acceptedAt),
+          isNull(userInvitations.revokedAt),
+        ),
+      );
+
+    return {
+      userId: kullanici[0].id,
+      email: kullanici[0].email,
+      role: kullanici[0].role,
+    };
+  });
+}
+
 export async function cerezeBagla(invitationId: string): Promise<string> {
   const cerezKimligi = cerezKimligiUret();
   await db

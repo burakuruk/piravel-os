@@ -6,10 +6,12 @@ import {
   authSessions,
   authTwoFactors,
   authUsers,
+  userInvitations,
   users,
 } from "@/db/schema";
 import { USER_ROLES, type UserRole } from "@/lib/auth-policy";
 import { newId } from "@/lib/ids";
+import { davetDurumu } from "@/lib/invitations";
 
 /**
  * Kullanıcı yönetiminin iş kuralları — TEK YER.
@@ -417,6 +419,101 @@ export async function bekleyenKullaniciOlustur(input: {
 
     return { userId };
   });
+}
+
+/**
+ * Kullanıcı listesi — rolün görebildiği alanlarla sınırlanmış hâlde.
+ *
+ * ⚠ Süzme BURADA yapılır, UI'da değil: yanıt gövdesine hiç girmeyen bir alan
+ * sızdırılamaz. Davet DURUMU döner, token asla.
+ */
+export async function kullanicilariListele(role: UserRole) {
+  if (role === "member") return [];
+
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      fullName: users.fullName,
+      phone: users.phone,
+      role: users.role,
+      isActive: users.isActive,
+      activatedAt: users.activatedAt,
+      lastLoginAt: users.lastLoginAt,
+      totpEnabledAt: users.totpEnabledAt,
+      createdAt: users.createdAt,
+      davetExpiresAt: userInvitations.expiresAt,
+      davetAcceptedAt: userInvitations.acceptedAt,
+      davetRevokedAt: userInvitations.revokedAt,
+    })
+    .from(users)
+    .leftJoin(
+      userInvitations,
+      and(
+        eq(userInvitations.userId, sql`${users.id}::text`),
+        isNull(userInvitations.acceptedAt),
+        isNull(userInvitations.revokedAt),
+      ),
+    )
+    .where(isNull(users.deletedAt))
+    .orderBy(users.fullName);
+
+  return rows.map((r) => alanlariSuz(zenginlestir(r), role));
+}
+
+/** Ham satırı sunum modeline çevirir — davetin yalnız durumu ve son tarihi. */
+function zenginlestir(r: {
+  id: string;
+  email: string;
+  fullName: string;
+  phone: string | null;
+  role: UserRole;
+  isActive: boolean;
+  activatedAt: Date | null;
+  lastLoginAt: Date | null;
+  totpEnabledAt: Date | null;
+  createdAt: Date;
+  davetExpiresAt: Date | null;
+  davetAcceptedAt: Date | null;
+  davetRevokedAt: Date | null;
+}) {
+  const durum = kullaniciDurumu(r);
+  const davet =
+    r.davetExpiresAt === null
+      ? null
+      : {
+          durum: davetDurumu({
+            id: "",
+            userId: r.id,
+            expiresAt: r.davetExpiresAt,
+            acceptedAt: r.davetAcceptedAt,
+            revokedAt: r.davetRevokedAt,
+            cookieExpiresAt: null,
+          }),
+          expiresAt: r.davetExpiresAt.toISOString(),
+        };
+
+  return {
+    id: r.id,
+    email: r.email,
+    fullName: r.fullName,
+    phone: r.phone,
+    role: r.role,
+    isActive: r.isActive,
+    status: durum,
+    activatedAt: r.activatedAt ? r.activatedAt.toISOString() : null,
+    lastLoginAt: r.lastLoginAt ? r.lastLoginAt.toISOString() : null,
+    twoFactorEnabled: Boolean(r.totpEnabledAt),
+    createdAt: r.createdAt.toISOString(),
+    invitation: davet,
+  };
+}
+
+/** Tek kullanıcı — listeyle AYNI süzgeçten geçer. */
+export async function kullaniciDetayi(userId: string, role: UserRole) {
+  if (role === "member") return null;
+  const hepsi = await kullanicilariListele(role);
+  return hepsi.find((k) => (k as { id?: string }).id === userId) ?? null;
 }
 
 /**

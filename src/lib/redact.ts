@@ -73,6 +73,36 @@ export function redactString(input: string): string {
 }
 
 /**
+ * IP adresini denetim izine yazılabilir hâle getirir — PRD §6.3 "tam IP yok".
+ *
+ * Ağ öneki korunur, ana bilgisayar kısmı düşürülür: bir olayın hangi ağdan
+ * geldiği araştırılabilir kalır ama kayıt tek bir kişiyi işaret etmez.
+ * Hash'lemek yerine önek maskeleme seçildi çünkü denetimde asıl soru "hangi
+ * ağ" — hash bu soruya cevap veremez. (Korelasyon gereken yerde
+ * `auth_login_attempts` zaten ayrıca hash tutuyor.)
+ *
+ * `x-forwarded-for` birden çok adres taşıyabilir; yalnız ilki (istemci) alınır.
+ */
+export function maskeliIp(ip: string | null | undefined): string | null {
+  if (!ip) return null;
+  const ilk = ip.split(",")[0].trim();
+  if (!ilk) return null;
+
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ilk)) {
+    const p = ilk.split(".");
+    return `${p[0]}.${p[1]}.${p[2]}.0/24`;
+  }
+  if (ilk.includes(":")) {
+    // IPv6 — ilk üç hextet (/48) korunur
+    const parcalar = ilk.split(":").filter(Boolean).slice(0, 3);
+    if (parcalar.length === 0) return "::/48";
+    return `${parcalar.join(":")}::/48`;
+  }
+  // Tanınmayan biçim: hiç saklama, tahmin etme
+  return null;
+}
+
+/**
  * Nesneyi derinlemesine temizler. Hassas anahtarların DEĞERİ atılır;
  * anahtarın kendisi kalır ki hata ayıklarken alanın varlığı görülebilsin.
  */
