@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { newId } from "@/lib/ids";
+import { betterAuthSecret } from "@/lib/env";
 
 /**
  * Hesap bazlı geçici kilit — IP rate limit'inden BAĞIMSIZ ikinci katman.
@@ -25,10 +26,15 @@ export const KURALLAR = {
 
 export type DenemeTuru = "password" | "totp" | "recovery_code";
 
-/** Tek yönlü hash — pepper sunucu sırrından gelir, geri döndürülemez. */
+/**
+ * Tek yönlü hash — pepper sunucu sırrından gelir, geri döndürülemez.
+ *
+ * Pepper `env.ts` üzerinden gelir: fallback YOK. Sır eksikse uygulama zaten
+ * başlamaz; burada sessizce zayıf bir pepper'a düşmek kilit kayıtlarını
+ * tahmin edilebilir kılardı (e-posta → hash sözlük saldırısı).
+ */
 function hashla(deger: string): string {
-  const pepper = process.env.BETTER_AUTH_SECRET ?? "gelistirme-pepper";
-  return createHash("sha256").update(`${pepper}:${deger}`).digest("hex");
+  return createHash("sha256").update(`${betterAuthSecret()}:${deger}`).digest("hex");
 }
 
 export function kimlikHash(email: string): string {

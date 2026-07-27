@@ -14,6 +14,7 @@ import {
   parolaGirisiSonrasi,
 } from "@/lib/auth-guards";
 import { parolaSifirlamaSonrasiTemizle } from "@/lib/auth-lockout";
+import { betterAuthSecret } from "@/lib/env";
 import { stepUpGecersizKil } from "@/lib/step-up";
 
 /**
@@ -29,7 +30,8 @@ import { stepUpGecersizKil } from "@/lib/step-up";
 export const auth = betterAuth({
   appName: "Piravel OS",
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
-  secret: process.env.BETTER_AUTH_SECRET ?? "gelistirme-ortami-icin-gecici-anahtar",
+  // Modül gövdesinde çağrılır: sır eksik/zayıfsa sunucu ilk isteği almadan düşer.
+  secret: betterAuthSecret(),
 
   /**
    * CSRF koruması: yalnız bu origin'lerden gelen istekler kabul edilir.

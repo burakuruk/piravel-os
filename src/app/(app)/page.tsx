@@ -21,16 +21,22 @@ const metrics = [
   { label: "Net nakit", value: "+18.400,00 ₺", tone: "" },
 ];
 
+/**
+ * ⚠ Marka/banka adları UYDURMA olmak ZORUNDA. Bu ekran `npm run screenshots`
+ * ile `docs/previews/` altına görsel olarak commit'leniyor; gerçek bir müşteri
+ * veya hesap adı buraya yazılırsa repo geçmişine kalıcı girer. Yer tutucular
+ * `Sahte *` / `Test *` önekiyle bakışta ayırt edilebilir olmalı.
+ */
 const attention = [
-  { text: "Vis Vize — Ağustos tahsilatı 5 gün gecikti", badge: "Gecikti", variant: "danger" as const },
-  { text: "Halkalı Doktor sözleşmesi 22 gün sonra bitiyor", badge: "Sözleşme", variant: "warning" as const },
-  { text: "Adobe CC ödemesi yarın", badge: "Ödeme", variant: "warning" as const },
+  { text: "Sahte Vize A.Ş. — Ağustos tahsilatı 5 gün gecikti", badge: "Gecikti", variant: "danger" as const },
+  { text: "Test Klinik sözleşmesi 22 gün sonra bitiyor", badge: "Sözleşme", variant: "warning" as const },
+  { text: "Sahte Tasarım Aboneliği ödemesi yarın", badge: "Ödeme", variant: "warning" as const },
   { text: "Eylül içerik planı görevi teslim tarihini geçti", badge: "Görev", variant: "danger" as const },
 ];
 
 const accounts = [
-  { name: "Garanti TL Vadesiz", balance: "142.350,00 ₺" },
-  { name: "İş Bankası USD", balance: "3.120,00 $" },
+  { name: "Sahte Banka TL Vadesiz", balance: "142.350,00 ₺" },
+  { name: "Test Banka USD", balance: "3.120,00 $" },
   { name: "Nakit Kasa", balance: "4.500,00 ₺" },
 ];
 

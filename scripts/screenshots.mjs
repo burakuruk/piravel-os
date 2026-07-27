@@ -181,8 +181,22 @@ try {
       await oturumAc(page, OTURUM[shot.auth], shot.setupOnly);
     }
 
-    await page.goto(BASE + shot.path, { waitUntil: "networkidle" });
+    /**
+     * ⚠ `networkidle` KULLANILMAZ. Sidebar, henüz var olmayan Sprint 2+
+     * rotalarına (`/markalar`, `/alacaklar`, …) Link veriyor; Next bunları
+     * düşük öncelikli RSC prefetch'i olarak istiyor ve Chromium bu istekleri
+     * askıda tutuyor. "Sıfır bağlantı" durumu hiç oluşmadığından `networkidle`
+     * 30 sn'de zaman aşımına düşer — sunucu aynı rotaları ~36 ms'de yanıtlasa
+     * bile. Playwright de bu koşulu önermiyor.
+     *
+     * Yerine deterministik kapılar: DOM + yazı tipleri + bir düzen karesi.
+     */
+    await page.goto(BASE + shot.path, { waitUntil: "domcontentloaded" });
     await page.evaluateHandle("document.fonts.ready");
+    // Hidrasyon sonrası ilk boyamayı garantiler; sabit `waitForTimeout` değil.
+    await page.evaluate(
+      () => new Promise((c) => requestAnimationFrame(() => requestAnimationFrame(c))),
+    );
 
     if (shot.openDrawer) {
       // React hidrasyonu bitmeden yapılan tıklama kaybolur; açılana kadar dene.
