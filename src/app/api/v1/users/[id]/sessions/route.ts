@@ -1,5 +1,5 @@
 import { headers as gelenBasliklar } from "next/headers";
-import { kritikIslemKapisi, rota, yonetenKullanici } from "@/lib/api";
+import { durumDegistirenIstek, kritikIslemKapisi, rota, yonetenKullanici } from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { buildRequestContext } from "@/lib/request-context";
 import { oturumlariIptalEt } from "@/lib/user-admin";
@@ -12,8 +12,9 @@ import { oturumlariIptalEt } from "@/lib/user-admin";
  * başkasının cihaz/tarayıcı geçmişini görmesi için meşru bir sebep yok
  * (docs/02 §5) — kullanıcı kendi listesini `/api/v1/sessions`'tan görür.
  */
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return rota(async () => {
+    await durumDegistirenIstek(request);
     const user = await yonetenKullanici();
     const { id } = await params;
 

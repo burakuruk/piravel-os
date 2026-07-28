@@ -1,5 +1,5 @@
 import { headers as gelenBasliklar } from "next/headers";
-import { oturumluKullanici, rota } from "@/lib/api";
+import { durumDegistirenIstek, oturumluKullanici, rota } from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { buildRequestContext } from "@/lib/request-context";
 import { digerOturumlariKapat, oturumlariListele } from "@/lib/session-admin";
@@ -21,8 +21,10 @@ export async function GET() {
   });
 }
 
-export async function DELETE() {
+export async function DELETE(request: Request) {
   return rota(async () => {
+    // Ortak kapı: Origin zorunlu, gövde varsa yalnız JSON (CSRF)
+    await durumDegistirenIstek(request);
     const user = await oturumluKullanici();
     const sonuc = await digerOturumlariKapat({
       userId: user.id,

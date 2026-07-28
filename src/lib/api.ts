@@ -78,7 +78,7 @@ export async function kritikIslemKapisi(
  * sayılmamasına dayanır — form gönderimiyle CSRF denemesi preflight'a takılır.
  */
 export async function yazmaIstegiDogrula(request: Request): Promise<void> {
-  const basliklar = await gelenBasliklar();
+  await durumDegistirenIstek(request);
 
   const ct = request.headers.get("content-type") ?? "";
   if (!ct.toLowerCase().startsWith("application/json")) {
@@ -86,10 +86,39 @@ export async function yazmaIstegiDogrula(request: Request): Promise<void> {
       hataYanit("UNSUPPORTED_MEDIA_TYPE", "İçerik türü desteklenmiyor", 415),
     );
   }
+}
 
+/**
+ * Durum değiştiren HER isteğin ortak kapısı — gövdesi olsun olmasın.
+ *
+ * ⚠ ORIGIN ZORUNLUDUR, "varsa doğrula" YETMEZ. Başlığın yokluğunu geçerli
+ * saymak, onu göndermeyen her istemciye kapıyı açar; tarayıcıdan gelen
+ * siteler arası istekler ise Origin'i daima taşır. Eksik başlık bu yüzden
+ * reddedilir — CSRF koruması "başlık varsa kontrol et" ile kurulamaz.
+ *
+ * Gövde varsa yalnız `application/json` kabul edilir: bu tür basit istek
+ * (simple request) sayılmadığı için siteler arası form gönderimi preflight'a
+ * takılır ve hiç ulaşmaz.
+ */
+export async function durumDegistirenIstek(request: Request): Promise<void> {
+  const basliklar = await gelenBasliklar();
   const origin = request.headers.get("origin");
-  if (origin && !guvenilirOrigin(origin, basliklar.get("host"))) {
+
+  if (!origin) {
+    throw new RotaHatasi(
+      hataYanit("FORBIDDEN_ORIGIN", "İstek kaynağı doğrulanamadı", 403),
+    );
+  }
+  if (!guvenilirOrigin(origin, basliklar.get("host"))) {
     throw new RotaHatasi(hataYanit("FORBIDDEN_ORIGIN", "İstek kaynağı kabul edilmedi", 403));
+  }
+
+  // Gövdesiz isteklerde Content-Type hiç gelmez; geldiyse JSON olmalı.
+  const ct = request.headers.get("content-type");
+  if (ct && !ct.toLowerCase().startsWith("application/json")) {
+    throw new RotaHatasi(
+      hataYanit("UNSUPPORTED_MEDIA_TYPE", "İçerik türü desteklenmiyor", 415),
+    );
   }
 }
 

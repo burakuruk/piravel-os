@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { guvenilenProxySayisi, ipCoz } from "./istemci-ip";
+import { proxyHopsDogrula } from "./env";
+import { ipCoz } from "./istemci-ip";
 
 /**
  * Bu testler bir GÜVEN SINIRINI korur: `x-forwarded-for` istemci tarafından
@@ -7,22 +8,61 @@ import { guvenilenProxySayisi, ipCoz } from "./istemci-ip";
  * buradaki davranışa bağlıdır.
  */
 
-describe("guvenilenProxySayisi", () => {
-  it("tanımsız veya geçersiz değer 0 (güvenme) demektir", () => {
-    for (const d of [undefined, null, "", "abc", "-1", "-5"]) {
-      expect(guvenilenProxySayisi(d)).toBe(0);
-    }
+describe("proxyHopsDogrula — geliştirme ortamı", () => {
+  const gelistirme = (d: string | undefined | null) => proxyHopsDogrula(d, false);
+
+  it("tanımsız veya boş değer 0 (güvenme) demektir", () => {
+    for (const d of [undefined, null, "", "   "]) expect(gelistirme(d)).toBe(0);
   });
 
   it("geçerli sayıyı okur", () => {
-    expect(guvenilenProxySayisi("1")).toBe(1);
-    expect(guvenilenProxySayisi("2")).toBe(2);
+    expect(gelistirme("1")).toBe(1);
+    expect(gelistirme("2")).toBe(2);
+  });
+
+  it("negatif ve sayı olmayan değer HATA verir", () => {
+    for (const d of ["-1", "abc", "1.5"]) expect(() => gelistirme(d)).toThrow();
   });
 
   it("aşırı büyük değer sınırlanır", () => {
     // Aksi hâlde zincirin en solundaki (tamamen istemci kontrolündeki)
     // eleman "güvenilir" sayılırdı.
-    expect(guvenilenProxySayisi("999")).toBe(8);
+    expect(gelistirme("999")).toBe(8);
+  });
+});
+
+describe("proxyHopsDogrula — ÜRETİM: yanlış yapılandırma başlatmaz", () => {
+  const uretim = (d: string | undefined | null) => proxyHopsDogrula(d, true);
+
+  it("eksik değer üretimde HATA verir", () => {
+    for (const d of [undefined, null, "", "   "]) expect(() => uretim(d)).toThrow();
+  });
+
+  it("0 üretimde reddedilir — herkesi tek kovaya düşürürdü", () => {
+    expect(() => uretim("0")).toThrow();
+  });
+
+  it("negatif ve geçersiz değer reddedilir", () => {
+    for (const d of ["-1", "-5", "abc", "1.5", "NaN"]) expect(() => uretim(d)).toThrow();
+  });
+
+  it("8 üstü reddedilir", () => {
+    expect(() => uretim("9")).toThrow();
+  });
+
+  it("geçerli değerler kabul edilir", () => {
+    expect(uretim("1")).toBe(1);
+    expect(uretim("2")).toBe(2);
+    expect(uretim(" 3 ")).toBe(3);
+  });
+
+  it("hata mesajı hangi değişkenin sorunlu olduğunu söyler", () => {
+    try {
+      uretim("0");
+      expect.unreachable("doğrulama geçmemeliydi");
+    } catch (e) {
+      expect((e as Error).message).toContain("TRUSTED_PROXY_HOPS");
+    }
   });
 });
 

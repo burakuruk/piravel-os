@@ -1,5 +1,5 @@
 import { headers as gelenBasliklar } from "next/headers";
-import { hataYanit, oturumluKullanici, rota, YOK } from "@/lib/api";
+import { durumDegistirenIstek, hataYanit, oturumluKullanici, rota, YOK } from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { buildRequestContext } from "@/lib/request-context";
 import { oturumuKapat } from "@/lib/session-admin";
@@ -15,10 +15,11 @@ import { oturumuKapat } from "@/lib/session-admin";
  * güvenli sonuçlanmasını sağlar.
  */
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   return rota(async () => {
+    await durumDegistirenIstek(request);
     const user = await oturumluKullanici();
     const { id } = await params;
 

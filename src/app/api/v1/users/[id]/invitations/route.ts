@@ -3,6 +3,7 @@ import { headers as gelenBasliklar } from "next/headers";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import {
+  durumDegistirenIstek,
   rota,
   uygulamaOrigin,
   yazmaIstegiDogrula,
@@ -75,6 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return rota(async () => {
+    await durumDegistirenIstek(request);
     const user = await yonetenKullanici();
     const { id } = await params;
 

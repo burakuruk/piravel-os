@@ -90,6 +90,69 @@ export function betterAuthSecret(): string {
   return betterAuthSecretOnbellek;
 }
 
+/**
+ * `TRUSTED_PROXY_HOPS` doğrulaması.
+ *
+ * ⚠ ÜRETİMDE DEĞER ZORUNLUDUR. IP tabanlı hız sınırı aktifken yanlış
+ * yapılandırma iki yönde de zarar verir:
+ *   · fazla güven  → saldırgan sahte `x-forwarded-for` ile sınırı atlar
+ *   · hiç güvenme  → istemci IP'si çözülemez ve TÜM kullanıcılar tek bir
+ *                    kovaya düşer; bir kişinin denemeleri herkesi kilitler
+ *
+ * Bu yüzden üretimde eksik, sıfır, negatif veya sayı olmayan değer bir
+ * başlatma hatasıdır — sessiz bir varsayılana düşmek iki riskten birini
+ * kesinleştirirdi. Geliştirmede 0 serbesttir (proxy yoktur).
+ *
+ * Değer hosting ortamına göre belirlenir: uygulamanın ÖNÜNDEKİ gerçek ters
+ * proxy sayısı (tek nginx/ALB → 1, CDN + ALB → 2). Tahmin edilmez.
+ */
+export function proxyHopsDogrula(
+  ham: string | undefined | null,
+  uretim: boolean,
+): number {
+  const tanimli = ham !== undefined && ham !== null && String(ham).trim() !== "";
+
+  if (!uretim) {
+    if (!tanimli) return 0;
+    const n = Number(String(ham).trim());
+    if (!Number.isInteger(n) || n < 0) {
+      throw new OrtamSirriHatasi("TRUSTED_PROXY_HOPS", "negatif olmayan bir tam sayı olmalı");
+    }
+    return Math.min(n, 8);
+  }
+
+  if (!tanimli) {
+    throw new OrtamSirriHatasi(
+      "TRUSTED_PROXY_HOPS",
+      "üretimde açıkça tanımlanmalı (uygulamanın önündeki ters proxy sayısı)",
+    );
+  }
+  const n = Number(String(ham).trim());
+  if (!Number.isInteger(n)) {
+    throw new OrtamSirriHatasi("TRUSTED_PROXY_HOPS", "tam sayı olmalı");
+  }
+  if (n < 1) {
+    throw new OrtamSirriHatasi(
+      "TRUSTED_PROXY_HOPS",
+      "üretimde en az 1 olmalı — 0 tüm kullanıcıları tek hız sınırı kovasına düşürür",
+    );
+  }
+  if (n > 8) {
+    throw new OrtamSirriHatasi("TRUSTED_PROXY_HOPS", "8'den büyük olamaz");
+  }
+  return n;
+}
+
+let proxyHopsOnbellek: number | null = null;
+
+export function guvenilenProxyHops(): number {
+  proxyHopsOnbellek ??= proxyHopsDogrula(
+    process.env.TRUSTED_PROXY_HOPS,
+    process.env.NODE_ENV === "production",
+  );
+  return proxyHopsOnbellek;
+}
+
 let invitePepperOnbellek: string | null = null;
 
 /**

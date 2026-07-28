@@ -19,14 +19,7 @@
  * okumaz. Ters proxy arkasına konulurken değer bilinçli olarak ayarlanır.
  */
 
-/** Kaç ters proxy'ye güveniliyor. 0 = proxy başlıkları yok sayılır. */
-export function guvenilenProxySayisi(deger: string | undefined | null): number {
-  const n = Number.parseInt(String(deger ?? "0"), 10);
-  if (!Number.isFinite(n) || n < 0) return 0;
-  // Üst sınır: yanlışlıkla girilen büyük bir değer, listenin en solundaki
-  // (tamamen istemci kontrolündeki) elemanı "güvenilir" saymaya götürmesin.
-  return Math.min(n, 8);
-}
+import { guvenilenProxyHops } from "@/lib/env";
 
 function temiz(deger: string): string | null {
   const t = deger.trim();
@@ -74,11 +67,12 @@ export function ipCoz(
   return temiz(xRealIp ?? "") ?? null;
 }
 
-/** Uygulamanın yapılandırmasıyla çözer. */
+/**
+ * Uygulamanın yapılandırmasıyla çözer.
+ *
+ * Değer `env.ts` üzerinden gelir: üretimde eksik/geçersiz yapılandırma
+ * uygulamayı hiç başlatmaz (bkz. `proxyHopsDogrula`).
+ */
 export function istemciIp(headers: Headers | undefined): string | null {
-  return ipCoz(
-    headers?.get("x-forwarded-for"),
-    headers?.get("x-real-ip"),
-    guvenilenProxySayisi(process.env.TRUSTED_PROXY_HOPS),
-  );
+  return ipCoz(headers?.get("x-forwarded-for"), headers?.get("x-real-ip"), guvenilenProxyHops());
 }

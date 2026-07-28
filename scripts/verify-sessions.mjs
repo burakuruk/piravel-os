@@ -97,6 +97,9 @@ function client(ua = UA.masaustu, sabitIp = null) {
     get: (p, h) => cagir("GET", p, undefined, h),
     post: (p, b, h) => cagir("POST", p, b ?? {}, h),
     del: (p, b, h) => cagir("DELETE", p, b, h),
+    get cerez() {
+      return cookies;
+    },
     ip,
   };
 }
@@ -220,6 +223,138 @@ console.log("\n═══ 2. Yanıtta sır yok ═══");
     Object.keys(ilk).join(","),
   );
   check("Ağ bilgisi maskeli", ilk.ag === null || /\/(24|48)$/.test(ilk.ag), String(ilk.ag));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ 2b. Yanıttaki `id` bir TOKEN DEĞİLDİR ═══");
+// ═══════════════════════════════════════════════════════════════════
+{
+  const liste = await uye.get("/api/v1/sessions");
+  const idler = liste.json.sessions.map((o) => o.id);
+  const uyeId = await kullaniciId("member@example.com");
+  const { rows } = await sql.query(
+    "SELECT id, token FROM auth_session WHERE user_id = $1",
+    [uyeId],
+  );
+
+  check(
+    "id, auth_session.token ile AYNI DEĞİL",
+    idler.every((id) => rows.every((r) => r.token !== id)),
+  );
+  check(
+    "id gerçekten auth_session.id (token değil)",
+    idler.every((id) => rows.some((r) => r.id === id)),
+  );
+
+  // Çerezdeki oturum değeriyle de aynı olmamalı
+  const cerezDegerleri = uye.cerez
+    .split("; ")
+    .map((c) => decodeURIComponent(c.split("=").slice(1).join("=")))
+    .filter(Boolean);
+  check(
+    "id, çerez değerlerinin hiçbiriyle aynı değil",
+    idler.every((id) => !cerezDegerleri.some((c) => c === id || c.includes(id))),
+    `${cerezDegerleri.length} çerez incelendi`,
+  );
+
+  // Token'ın hash'i de olmamalı (sha256/HMAC hex biçimi)
+  const { createHash, createHmac } = await import("node:crypto");
+  const hashlar = new Set();
+  for (const r of rows) {
+    hashlar.add(createHash("sha256").update(r.token).digest("hex"));
+    hashlar.add(
+      createHmac("sha256", process.env.BETTER_AUTH_SECRET ?? "").update(r.token).digest("hex"),
+    );
+  }
+  check("id, token'ın hash'i de değil", idler.every((id) => !hashlar.has(id)));
+
+  /**
+   * En önemlisi: id TEK BAŞINA kimlik doğrulamaz. Çerez yerine id konularak
+   * yapılan istek reddedilmeli — aksi hâlde listeyi gören herkes başkasının
+   * oturumunu ele geçirirdi.
+   */
+  const cerezAdi = uye.cerez.split("=")[0];
+  const sahteCerez = `${cerezAdi}=${idler[0]}`;
+  const res = await fetch(`${BASE}/api/v1/sessions`, {
+    headers: { origin: BASE, cookie: sahteCerez, "x-test-run-id": RUN_ID },
+    redirect: "manual",
+  });
+  check(
+    "id çerez yerine konulunca kimlik doğrulamıyor",
+    res.status >= 400,
+    `HTTP ${res.status}`,
+  );
+
+  // HTML kaynağında da token bulunmamalı
+  const sayfa = await uye.get("/ayarlar/oturumlar");
+  check(
+    "HTML kaynağında oturum token'ı YOK",
+    rows.every((r) => !sayfa.text.includes(r.token)),
+  );
+  check(
+    "HTML kaynağında token/hash anahtarı YOK",
+    !/sessionToken|session_token|tokenHash/i.test(sayfa.text),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ 2c. Oturum kapatma uçlarında aynı kaynak koruması ═══");
+// ═══════════════════════════════════════════════════════════════════
+{
+  const cerezli = uye.cerez;
+  const uyeId = await kullaniciId("member@example.com");
+  const liste = await uye.get("/api/v1/sessions");
+  const birId = liste.json.sessions.find((o) => !o.mevcut)?.id ?? liste.json.sessions[0].id;
+
+  const uclar = [
+    ["DELETE /api/v1/sessions", "/api/v1/sessions"],
+    ["DELETE /api/v1/sessions/:id", `/api/v1/sessions/${birId}`],
+    ["DELETE /api/v1/users/:id/sessions", `/api/v1/users/${uyeId}/sessions`],
+  ];
+
+  for (const [ad, yol] of uclar) {
+    // Başka bir siteden, kullanıcının çereziyle
+    const yabanci = await fetch(`${BASE}${yol}`, {
+      method: "DELETE",
+      headers: { origin: "https://kotu.example", cookie: cerezli, "x-test-run-id": RUN_ID },
+      redirect: "manual",
+    });
+    check(`${ad}: yabancı Origin reddedilir`, yabanci.status === 403, `HTTP ${yabanci.status}`);
+
+    // Origin hiç yokken de reddedilmeli — "varsa kontrol et" yetmez
+    const originsiz = await fetch(`${BASE}${yol}`, {
+      method: "DELETE",
+      headers: { cookie: cerezli, "x-test-run-id": RUN_ID },
+      redirect: "manual",
+    });
+    check(`${ad}: Origin'siz istek reddedilir`, originsiz.status === 403, `HTTP ${originsiz.status}`);
+
+    // Beklenmeyen Content-Type
+    const yanlisTur = await fetch(`${BASE}${yol}`, {
+      method: "DELETE",
+      headers: {
+        origin: BASE,
+        cookie: cerezli,
+        "content-type": "application/x-www-form-urlencoded",
+        "x-test-run-id": RUN_ID,
+      },
+      body: "x=1",
+      redirect: "manual",
+    });
+    check(
+      `${ad}: beklenmeyen Content-Type reddedilir`,
+      yanlisTur.status === 415,
+      `HTTP ${yanlisTur.status}`,
+    );
+  }
+
+  // Reddedilen isteklerin hiçbiri oturum düşürmemeli
+  const halaVar = await uye.get("/api/v1/sessions");
+  check(
+    "Reddedilen istekler hiçbir oturumu kapatmadı",
+    halaVar.status === 200 && halaVar.json.sessions.length === liste.json.sessions.length,
+    `${halaVar.json?.sessions?.length} / ${liste.json.sessions.length}`,
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════

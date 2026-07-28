@@ -14,7 +14,7 @@ import {
   parolaGirisiSonrasi,
 } from "@/lib/auth-guards";
 import { parolaSifirlamaSonrasiTemizle } from "@/lib/auth-lockout";
-import { betterAuthSecret } from "@/lib/env";
+import { betterAuthSecret, guvenilenProxyHops } from "@/lib/env";
 import { stepUpGecersizKil } from "@/lib/step-up";
 
 /**
@@ -27,6 +27,15 @@ import { stepUpGecersizKil } from "@/lib/step-up";
  * (docs/02 §6). Session'a yazılan bir rol, oturum yenilenene kadar eskir ve
  * yetki yükseltme yüzeyi oluşturur.
  */
+/**
+ * Ters proxy yapılandırması BAŞLANGIÇTA doğrulanır.
+ *
+ * İlk isteğe bırakılsaydı, üretimde yanlış yapılandırılmış bir dağıtım sağlıklı
+ * görünüp hız sınırını sessizce bozardı. Burada çağrılması sunucunun hiç
+ * ayağa kalkmamasını sağlar.
+ */
+guvenilenProxyHops();
+
 export const auth = betterAuth({
   appName: "Piravel OS",
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",

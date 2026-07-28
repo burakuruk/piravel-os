@@ -1,5 +1,5 @@
 import { headers as gelenBasliklar } from "next/headers";
-import { kritikIslemKapisi, rota, yonetenKullanici } from "@/lib/api";
+import { durumDegistirenIstek, kritikIslemKapisi, rota, yonetenKullanici } from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { buildRequestContext } from "@/lib/request-context";
 import { ikiFaSifirla } from "@/lib/user-admin";
@@ -11,8 +11,9 @@ import { ikiFaSifirla } from "@/lib/user-admin";
  * düşer — ikinci faktörü sıfırlanmış kullanıcının o faktörle açılmış oturumu
  * geçerli kalmamalıdır.
  */
-export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return rota(async () => {
+    await durumDegistirenIstek(request);
     const user = await yonetenKullanici();
     const { id } = await params;
 
