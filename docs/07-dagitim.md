@@ -88,7 +88,58 @@ Adım 1 atlanırsa kullanıcılar sessizce çalışmayan bağlantılarla kalır.
 
 ---
 
-## 4. Bakım işleri
+## 4. Yerel veritabanı container'ı
+
+Geliştirme veritabanı **yalnız Docker Compose ile** yönetilir:
+
+```bash
+docker compose up -d      # başlat
+docker compose ps         # durum
+docker compose stop       # durdur (veri kalır)
+```
+
+⚠ **`docker run` ile elle container başlatmayın.** Öyle başlatılan bir container
+compose etiketleri taşımaz ve verisini **anonim** bir volume'da tutar; o volume
+`docker volume prune` veya `docker volume ls` çıktısında rastgele bir hash
+olarak görünür ve yanlışlıkla silinmesi çok kolaydır. Compose ise verileri
+isimli `piravel_yonetim_sistemi_piravel-pgdata` volume'unda tutar.
+
+Doğrulama:
+
+```bash
+docker inspect piravel-pg --format '{{index .Config.Labels "com.docker.compose.project"}}'
+# → piravel_yonetim_sistemi   (boş çıkıyorsa container compose yönetiminde DEĞİL)
+```
+
+### Yedek alma ve geri yükleme
+
+Container değiştirmeden veya sileceğiniz her durumdan önce:
+
+```bash
+# 1. Yedek — roller cluster seviyesindedir, ayrı alınır
+docker exec piravel-pg pg_dumpall -U piravel --roles-only > roller.sql
+docker exec piravel-pg pg_dump -U piravel -d piravel_os --clean --if-exists > piravel_os.sql
+
+# 2. Sayımları kaydet (KESİN sayım; pg_stat_user_tables TAHMİNDİR, kullanmayın)
+docker exec piravel-pg psql -U piravel -d piravel_os -c \
+  "SELECT 'users', count(*) FROM users UNION ALL SELECT 'audit_logs', count(*) FROM audit_logs;"
+
+# 3. Yedeği ÖNCE tek kullanımlık bir container'da aç — asıl veriye dokunmadan
+docker run -d --name pg-deneme -e POSTGRES_USER=piravel -e POSTGRES_PASSWORD=piravel \
+  -e POSTGRES_DB=piravel_os postgres:16
+docker exec -i pg-deneme psql -U piravel -d postgres < roller.sql
+docker exec -i pg-deneme psql -U piravel -d piravel_os < piravel_os.sql
+# sayımları karşılaştır, sonra: docker rm -f pg-deneme
+
+# 4. Geri yükleme sırası: ÖNCE roller, SONRA veritabanı
+#    (dump, piravel_app rolüne GRANT verir; rol yoksa yükleme hata verir)
+```
+
+Eski container **doğrulama bitene kadar silinmez**; adı çakışıyorsa
+`docker rename piravel-pg piravel-pg-eski` ile serbest bırakılır. Silme, yalnız
+yeni veritabanı tam doğrulandıktan sonra yapılır.
+
+## 5. Bakım işleri
 
 | İş | Durum |
 |---|---|
