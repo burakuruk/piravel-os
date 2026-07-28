@@ -16,7 +16,23 @@ import { NextResponse, type NextRequest } from "next/server";
  * tanımı gereği henüz oturumu yoktur. Yetki bu yollarda oturumla değil, kısa
  * ömürlü davet çerezi ve sunucudaki davet kaydıyla kurulur.
  */
-const PUBLIC_PREFIXES = ["/giris", "/api/auth", "/wireframe", "/davet", "/api/v1/davet"];
+const PUBLIC_PREFIXES = [
+  "/giris",
+  "/api/auth",
+  "/wireframe",
+  "/davet",
+  "/api/v1/davet",
+];
+
+/**
+ * ⚠ `/styleguide` BİLEREK public değildir.
+ *
+ * Public olsaydı üretimde oturumsuz bir yoklama 404 alırdı; oysa bilinmeyen
+ * her yol girişe yönlendirilir (307). Bu fark tek başına "böyle bir rota var"
+ * bilgisini verirdi. Listeden çıkarınca styleguide oturumsuz istekte diğer
+ * yollarla aynı yanıtı alır, oturumlu istekte de sayfanın kendisi 404 döner
+ * (bkz. styleguide/page.tsx) — hiçbir aşamada ayırt edilemez.
+ */
 
 /**
  * Davet akışının tamamı — `/davet/<token>`, temiz `/davet` sayfası ve kabul ucu.

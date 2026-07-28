@@ -20,7 +20,8 @@
     "verify:stepup": "node scripts/verify-stepup.mjs",
     "verify:users": "node scripts/verify-users.mjs",
     "verify:sessions": "node scripts/verify-sessions.mjs",
-    "verify:a11y": "node scripts/verify-a11y.mjs"
+    "verify:a11y": "node scripts/verify-a11y.mjs",
+    "verify:styleguide": "node scripts/verify-styleguide.mjs"
   },
   "dependencies": {
     "better-auth": "^1.6.25",

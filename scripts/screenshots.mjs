@@ -380,6 +380,12 @@ shots.push(
       await page.locator("table").getByRole("button", { name: "Çıkış yap" }).first().click();
       await page.waitForSelector('[role="dialog"]');
     } },
+  /**
+   * Styleguide — `devOnly`: üretim sunucusunda 404 döner, kare atlanır.
+   * Oturum gerekir (middleware public listeye almaz).
+   */
+  { file: "50-styleguide-1440x2400.png", path: "/styleguide", w: 1440, h: 2400, auth: "mem", devOnly: true },
+  { file: "51-styleguide-mobil-375x2400.png", path: "/styleguide", w: 375, h: 2400, auth: "mem", devOnly: true },
   { file: "45-oturum-iptali-stepup-1440x1000.png", path: `/kullanicilar/${opsId}`, w: 1440, h: 1000, auth: "sa", ua: GERCEKCI_UA,
     async hazirla(page) {
       await page.getByRole("button", { name: "Tüm oturumları kapat" }).click();
@@ -387,9 +393,23 @@ shots.push(
     } },
 );
 
+/**
+ * Styleguide ÜRETİMDE 404 döner (bilerek). Görselleri bu yüzden yalnız
+ * geliştirme sunucusuna karşı üretilebilir:
+ *
+ *   npm run dev
+ *   SCREENSHOT_FILTER=styleguide PREVIEW_URL=http://localhost:3000 npm run screenshots
+ *
+ * Filtre verilmediğinde ve sunucu üretim modundaysa bu kareler atlanır —
+ * script yarıda düşmesin, ama sessizce de geçmesin.
+ */
+const FILTRE = process.env.SCREENSHOT_FILTER;
+const secilen = FILTRE ? shots.filter((s) => s.file.includes(FILTRE)) : shots;
+if (FILTRE) console.log(`· Filtre: "${FILTRE}" → ${secilen.length} kare\n`);
+
 const browser = await chromium.launch();
 try {
-  for (const shot of shots) {
+  for (const shot of secilen) {
     const page = await browser.newPage({
       viewport: { width: shot.w, height: shot.h },
       deviceScaleFactor: 2, // retina netliği
@@ -416,7 +436,21 @@ try {
      *
      * Yerine deterministik kapılar: DOM + yazı tipleri + bir düzen karesi.
      */
-    await page.goto(BASE + shot.path, { waitUntil: "domcontentloaded" });
+    const yanit = await page.goto(BASE + shot.path, { waitUntil: "domcontentloaded" });
+
+    /**
+     * `devOnly` kareler yalnız geliştirme sunucusunda anlamlı. Kontrol GİRİŞTEN
+     * SONRA ve sayfanın kendi yanıtı üzerinden yapılır — oturumsuz bir yoklama
+     * middleware'e takılır ve üretim/geliştirme ayrımını göstermez.
+     */
+    if (shot.devOnly && yanit && yanit.status() !== 200) {
+      console.log(
+        `· ${shot.file} ATLANDI — ${shot.path} bu sunucuda kapalı (HTTP ${yanit.status()})`,
+      );
+      await page.close();
+      continue;
+    }
+
     await page.evaluateHandle("document.fonts.ready");
     // Hidrasyon sonrası ilk boyamayı garantiler; sabit `waitForTimeout` değil.
     await page.evaluate(

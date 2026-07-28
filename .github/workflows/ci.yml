@@ -128,3 +128,7 @@ jobs:
 
       - name: Mobil drawer erişilebilirliği
         run: npm run verify:a11y
+
+      # Üretim derlemesine karşı koşar: styleguide'ın KAPALI olduğunu doğrular.
+      - name: Styleguide üretimde kapalı
+        run: npm run verify:styleguide
