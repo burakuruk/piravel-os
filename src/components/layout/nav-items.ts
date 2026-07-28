@@ -5,6 +5,7 @@ import {
   FileText,
   LayoutDashboard,
   ListChecks,
+  MonitorSmartphone,
   PiggyBank,
   Receipt,
   Settings,
@@ -71,6 +72,8 @@ const GROUPS: NavGroup[] = [
       { href: "/bildirimler", label: "Bildirimler", icon: Bell, roles: ALL },
       { href: "/kullanicilar", label: "Kullanıcılar", icon: Users, roles: SA },
       { href: "/ayarlar", label: "Ayarlar", icon: Settings, roles: SA },
+      // Kendi oturumları: her rol kendi hesabını yönetebilmeli
+      { href: "/ayarlar/oturumlar", label: "Oturumlarım", icon: MonitorSmartphone, roles: ALL },
       { href: "/denetim", label: "Denetim", icon: ShieldCheck, roles: FINANS },
       { href: "/cop-kutusu", label: "Çöp Kutusu", icon: Trash2, roles: SA },
     ],

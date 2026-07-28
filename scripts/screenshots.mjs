@@ -244,6 +244,61 @@ async function kullaniciFixtureleri() {
   return { bekleyenId, pasifId, opsId: ops[0]?.id };
 }
 
+/**
+ * Oturum ekranı için sahte cihazlar.
+ *
+ * Görselde birden çok cihaz görünmeli; tek oturumla "diğerlerini kapat" ve
+ * cihaz çeşitliliği anlatılamaz. Satırlar doğrudan eklenir — token değerleri
+ * anlamsız sabitlerdir ve hiçbir gerçek oturuma karşılık gelmez.
+ */
+async function oturumFixtureleri(email) {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+  const { rows } = await sql.query("SELECT id FROM auth_user WHERE email = $1", [email]);
+  const userId = rows[0]?.id;
+  if (!userId) {
+    await sql.end();
+    return;
+  }
+  /**
+   * Her kare yeni bir giriş yapar ve yeni bir oturum satırı bırakır; birikince
+   * liste onlarca aynı satırla dolar. Bu koşuda AZ ÖNCE açılan oturum (mevcut
+   * oturum) korunur, öncekiler temizlenir.
+   */
+  await sql.query(
+    `DELETE FROM auth_session
+      WHERE user_id = $1
+        AND id <> (SELECT id FROM auth_session WHERE user_id = $1
+                    ORDER BY created_at DESC LIMIT 1)`,
+    [userId],
+  );
+  await sql.query("DELETE FROM auth_session WHERE token LIKE 'sahte-oturum-%'", []);
+
+  const cihazlar = [
+    [
+      "sahte-oturum-telefon",
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      "203.0.113.24",
+      "3 hours",
+    ],
+    [
+      "sahte-oturum-mac",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      "198.51.100.77",
+      "2 days",
+    ],
+  ];
+  for (const [token, ua, ip, yas] of cihazlar) {
+    await sql.query(
+      `INSERT INTO auth_session (id, user_id, token, expires_at, ip_address, user_agent, created_at, updated_at)
+       VALUES (gen_random_uuid()::text, $1, $2, now() + interval '7 days', $3, $4,
+               now() - interval '${yas}', now() - interval '${yas}')`,
+      [userId, token, ip, ua],
+    );
+  }
+  await sql.end();
+}
+
 await fixtureSifirla();
 const { bekleyenId, pasifId, opsId } = await kullaniciFixtureleri();
 
@@ -286,6 +341,52 @@ shots.push(
   { file: "39-kullanici-detay-mobil-375x950.png", path: `/kullanicilar/${opsId}`, w: 375, h: 950, auth: "sa" },
 );
 
+/** Oturum yönetimi ekranları (Sprint 1 §2). */
+const OTURUM_YOLU = "/ayarlar/oturumlar";
+const GERCEKCI_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+shots.push(
+  { file: "40-oturumlar-1440x900.png", path: OTURUM_YOLU, w: 1440, h: 900, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await oturumFixtureleri(OTURUM.sa.email);
+      // Fixture DB'de değişti; sayfa sunucudan yeniden çizilmeli
+      await page.reload({ waitUntil: "domcontentloaded" });
+    } },
+  { file: "41-oturumlar-mobil-375x900.png", path: OTURUM_YOLU, w: 375, h: 900, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await oturumFixtureleri(OTURUM.sa.email);
+      await page.reload({ waitUntil: "domcontentloaded" });
+    } },
+  { file: "42-oturum-kapat-onayi-1440x900.png", path: OTURUM_YOLU, w: 1440, h: 900, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await oturumFixtureleri(OTURUM.sa.email);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      // "Bu oturum" olmayan ilk satırın Kapat düğmesi
+      await page.locator("table").getByRole("button", { name: "Kapat", exact: true }).first().click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  { file: "43-digerlerini-kapat-onayi-1440x900.png", path: OTURUM_YOLU, w: 1440, h: 900, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await oturumFixtureleri(OTURUM.sa.email);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.getByRole("button", { name: "Diğerlerini kapat" }).click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  { file: "44-mevcut-oturum-uyarisi-1440x900.png", path: OTURUM_YOLU, w: 1440, h: 900, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await oturumFixtureleri(OTURUM.sa.email);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      // Sidebar'da da "Çıkış yap" var; locator TABLOYLA sınırlanır
+      await page.locator("table").getByRole("button", { name: "Çıkış yap" }).first().click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  { file: "45-oturum-iptali-stepup-1440x1000.png", path: `/kullanicilar/${opsId}`, w: 1440, h: 1000, auth: "sa", ua: GERCEKCI_UA,
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Tüm oturumları kapat" }).click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+);
+
 const browser = await chromium.launch();
 try {
   for (const shot of shots) {
@@ -293,6 +394,12 @@ try {
       viewport: { width: shot.w, height: shot.h },
       deviceScaleFactor: 2, // retina netliği
       locale: "tr-TR",
+      /**
+       * Playwright varsayılan olarak `HeadlessChrome/…` gönderir; cihaz özeti
+       * bunu Chrome olarak tanımaz ve görselde yanıltıcı bir satır çıkar.
+       * Oturum ekranları gerçekçi bir UA ile alınır.
+       */
+      ...(shot.ua ? { userAgent: shot.ua } : {}),
     });
     // Oturum gerekiyorsa gerçek akışla giriş yap (2FA dahil)
     if (shot.auth) {

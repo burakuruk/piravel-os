@@ -18,7 +18,8 @@
     "verify:auth": "node scripts/verify-auth-flow.mjs",
     "verify:lockout": "node scripts/verify-lockout.mjs",
     "verify:stepup": "node scripts/verify-stepup.mjs",
-    "verify:users": "node scripts/verify-users.mjs"
+    "verify:users": "node scripts/verify-users.mjs",
+    "verify:sessions": "node scripts/verify-sessions.mjs"
   },
   "dependencies": {
     "better-auth": "^1.6.25",
