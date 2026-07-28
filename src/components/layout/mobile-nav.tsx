@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Menu, X } from "lucide-react";
 import { ROLE_LABELS, type UserRole } from "@/lib/auth-policy";
 
@@ -20,6 +21,8 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  /** Portal kapsayıcısı — `inert` işaretlemesinde kendisi hariç tutulur. */
+  const kapsayiciRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -48,6 +51,26 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
 
     document.addEventListener("keydown", onKeyDown);
     document.body.style.overflow = "hidden";
+
+    /**
+     * ⚠ ARKA PLAN ERİŞİLEMEZ YAPILIR.
+     *
+     * Tab tuzağı tek başına YETMEZ: yalnız Tab tuşunu yakalar. Ekran okuyucu
+     * kullanıcısı sanal imleçle (ok tuşları, başlık gezinme) drawer'ın altındaki
+     * sayfayı okumaya devam edebilir ve modal içinde olduğunu fark etmez.
+     * `inert` hem odağı hem erişilebilirlik ağacını kapatır.
+     *
+     * Drawer portal ile doğrudan `body` altına taşındığı için kardeşlerini
+     * işaretlemek güvenlidir; aynı ağaçta kalsaydı kendi kendini de kapatırdı.
+     */
+    const kapatilanlar: HTMLElement[] = [];
+    for (const cocuk of Array.from(document.body.children)) {
+      if (cocuk === kapsayiciRef.current) continue;
+      if (!(cocuk instanceof HTMLElement)) continue;
+      if (cocuk.inert) continue; // zaten kapalıysa dokunma, geri açmayalım
+      cocuk.inert = true;
+      kapatilanlar.push(cocuk);
+    }
     /**
      * Odak PANELİN KENDİSİNE verilir, ilk düğmeye değil.
      * Düğmeye odaklanmak, fareyle açan kullanıcıda da kalıcı bir odak halkası
@@ -60,6 +83,7 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = "";
+      for (const el of kapatilanlar) el.inert = false;
     };
   }, [open]);
 
@@ -82,8 +106,17 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
         <Menu size={19} strokeWidth={1.75} />
       </button>
 
-      {open && (
-        <div className="fixed inset-0 z-50 lg:hidden" data-shell>
+      {/*
+        Portal: drawer `body`'nin doğrudan çocuğu olur. Topbar'ın içinde
+        kalsaydı arka planı `inert` yapmak drawer'ı da kapatırdı — kendi
+        atasını erişilemez ilan etmiş olurduk.
+
+        `open` başlangıçta false olduğu için portal yalnız istemcide, ilk
+        tıklamadan sonra kurulur; sunucu render'ında `document` aranmaz.
+      */}
+      {open &&
+        createPortal(
+        <div ref={kapsayiciRef} className="fixed inset-0 z-50 lg:hidden" data-shell>
           {/* Dışarı tıklama ile kapanma */}
           <div
             className="absolute inset-0 bg-navy-950/60"
@@ -115,8 +148,9 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
             <NavList role={role} onNavigate={() => setOpen(false)} />
             <UserBlock fullName={fullName} roleLabel={ROLE_LABELS[role]} />
           </div>
-        </div>
-      )}
+        </div>,
+          document.body,
+        )}
     </>
   );
 }

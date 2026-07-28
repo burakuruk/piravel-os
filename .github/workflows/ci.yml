@@ -119,3 +119,6 @@ jobs:
 
       - name: Oturum listesi ve iptali
         run: npm run verify:sessions
+
+      - name: Mobil drawer erişilebilirliği
+        run: npm run verify:a11y
