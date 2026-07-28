@@ -120,5 +120,11 @@ jobs:
       - name: Oturum listesi ve iptali
         run: npm run verify:sessions
 
+      # verify:a11y gerçek bir tarayıcıda klavye ve odak davranışını sınar;
+      # pipeline'daki ilk Playwright adımı olduğu için tarayıcı burada kurulur.
+      # Yalnız chromium: diğer motorlar bu testler için gereksiz indirme olurdu.
+      - name: Playwright tarayıcısı
+        run: npx playwright install --with-deps chromium
+
       - name: Mobil drawer erişilebilirliği
         run: npm run verify:a11y
