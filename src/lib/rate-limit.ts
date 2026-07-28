@@ -15,6 +15,9 @@ import { ipHash } from "@/lib/auth-lockout";
  * işaret eden bir veri deposu hâline gelmemelidir.
  */
 
+/** Better Auth'un kendi kayıtlarından ayıran önek. */
+export const ANAHTAR_ONEKI = "piravel:";
+
 export interface HizSonucu {
   izinli: boolean;
   /** Sınıra takıldıysa saniye cinsinden bekleme süresi. */
@@ -37,7 +40,16 @@ export async function hizSiniri(input: {
   limit: number;
   pencereSn: number;
 }): Promise<HizSonucu> {
-  const anahtar = `${input.kapsam}:${ipHash(input.ip) ?? "bilinmeyen"}`;
+  /**
+   * ⚠ İSİM ALANI ZORUNLU. `auth_rate_limit` tablosunu Better Auth ile
+   * PAYLAŞIYORUZ; o kendi anahtarlarını (genellikle "<ip>" veya "<ip>/<yol>")
+   * aynı `id` sütununa yazar. Önek olmadan iki sayaç aynı satıra düşebilir ve
+   * biri diğerinin penceresini sıfırlayabilirdi.
+   *
+   * Anahtarda ham IP BULUNMAZ — yalnız hash'i (PRD §6.3). Böylece sayaç
+   * tablosu da kişiyi işaret eden bir veri deposuna dönüşmez.
+   */
+  const anahtar = `${ANAHTAR_ONEKI}${input.kapsam}:${ipHash(input.ip) ?? "bilinmeyen"}`;
   const simdi = Date.now();
   const pencereMs = input.pencereSn * 1000;
   const pencereBasi = simdi - pencereMs;
@@ -66,4 +78,26 @@ export async function hizSiniri(input: {
 
   const kalanMs = baslangic + pencereMs - simdi;
   return { izinli: false, yenidenDeneSn: Math.max(1, Math.ceil(kalanMs / 1000)) };
+}
+
+/**
+ * Süresi geçmiş sayaç satırlarını siler.
+ *
+ * ⚠ Tablo KENDİLİĞİNDEN KÜÇÜLMEZ: her yeni IP hash'i kalıcı bir satır bırakır
+ * ve pencere dolduğunda satır silinmez, yalnız sıfırlanır. Uzun vadede bu
+ * tablo sınırsız büyür.
+ *
+ * Temizlik BURADA otomatik yapılmaz — istek yolunda çalıştırılırsa her istek
+ * bir tablo taramasının bedelini öder. Sprint 6'daki günlük job bu fonksiyonu
+ * çağıracak; o gelene kadar tablo elle veya `db:cleanup` ile boşaltılabilir.
+ * Better Auth'un kendi kayıtları (öneksiz) dokunulmadan bırakılır.
+ */
+export async function eskiSayaclariTemizle(yasSn = 24 * 3600): Promise<number> {
+  const esik = Date.now() - yasSn * 1000;
+  const sonuc = (await db.execute(sql`
+    DELETE FROM auth_rate_limit
+     WHERE id LIKE ${`${ANAHTAR_ONEKI}%`}
+       AND last_request < ${esik}
+  `)) as { rowCount?: number };
+  return sonuc.rowCount ?? 0;
 }

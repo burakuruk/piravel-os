@@ -40,7 +40,7 @@ export async function POST(request: Request) {
      * üretirdi. Sayaç yalnız IP'ye bakar; hangi davetin denendiğini bilmez.
      */
     const hiz = await hizSiniri({
-      kapsam: "davet-kabul",
+      kapsam: "invite_accept",
       ip: rc.ipAddress,
       limit: 5,
       pencereSn: 60,

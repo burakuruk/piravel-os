@@ -39,6 +39,9 @@ jobs:
       # NODE_ENV'e değil bu bayrağa bağlı olduğu için testler GERÇEK production
       # sunucusuna karşı koşabilir. Üretim ortamında ASLA set edilmez.
       AUDIT_TEST_RUN_ID_ENABLED: "1"
+      # Doğrulama script'leri farklı istemcileri x-forwarded-for ile simüle
+      # eder; tek "proxy" bu script'tir. Üretimde gerçek proxy sayısı yazılır.
+      TRUSTED_PROXY_HOPS: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -113,3 +116,6 @@ jobs:
 
       - name: Kullanıcı yönetimi ve davet akışı
         run: npm run verify:users
+
+      - name: Oturum listesi ve iptali
+        run: npm run verify:sessions

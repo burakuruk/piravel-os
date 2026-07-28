@@ -1,4 +1,5 @@
 import { newId } from "@/lib/ids";
+import { istemciIp } from "@/lib/istemci-ip";
 
 /**
  * İstek bağlamı — kimlik ve izleme alanlarının TEK kaynağı.
@@ -63,7 +64,13 @@ export function buildRequestContext(headers: Headers | undefined): RequestContex
     requestId: newId(),
     upstreamRequestId: temizle(headers?.get("x-request-id")),
     testRunId: testRunIdCoz(headers, TEST_RUN_ID_ACIK),
-    ipAddress: headers?.get("x-forwarded-for") ?? headers?.get("x-real-ip") ?? null,
+    /**
+     * ⚠ Proxy başlıkları körü körüne okunmaz — `istemciIp` yalnız
+     * `TRUSTED_PROXY_HOPS` kadar ters proxy'ye güvenir ve zinciri sağdan
+     * okur. Aksi hâlde saldırgan her istekte sahte bir adres yazıp hız
+     * sınırını ve hesap kilidini sıfırlayabilirdi.
+     */
+    ipAddress: istemciIp(headers),
     userAgent: headers?.get("user-agent") ?? null,
   };
 }
