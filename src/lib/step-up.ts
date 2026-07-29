@@ -31,6 +31,19 @@ export const KRITIK_ISLEMLER = [
   "user.create_privileged",
   "user.revoke_all_sessions",
   "user.reset_two_factor",
+  /**
+   * Marka modülünün kritik işlemleri (Sprint 2).
+   *
+   * Dördü de ya bir YETKİ SINIRINI ya da FİNANSAL/HUKUKİ bir alanı değiştirir:
+   * atama OPS'a bir markanın kapısını açar/kapatır; vergi bilgisi faturaya
+   * gider; marka ve hizmet pasifleştirme sözleşme ve faturalama tarafını
+   * etkiler. Açık bırakılmış bir ekranın başındaki biri bunları
+   * yapamamalıdır — oturumun "taze" olması yetmez.
+   */
+  "brand.status_change",
+  "brand.update_tax",
+  "brand.assignment_change",
+  "service.deactivate",
   "bank_account.view_unmasked_iban",
   "allocation.reverse",
   "receivable.refund",

@@ -83,6 +83,12 @@ jobs:
       - name: Audit_logs değiştirilemezliği (rol + trigger)
         run: npm run db:verify-audit
 
+      # Migration'ın "hatasız koştu" demesi yetmez: DROP INDEX sessizce hiçbir
+      # şey düşürmemiş, bir FK CASCADE kalmış ya da CHECK hiç eklenmemiş
+      # olabilir. Bu adım ÜRETİLEN YAPIYA bakar ve temiz veritabanında koşar.
+      - name: Şema yapısı (tablo · kısıt · index · trigger · pg_trgm)
+        run: npm run verify:schema
+
       - name: Production build
         run: npm run build
 
@@ -119,6 +125,9 @@ jobs:
 
       - name: Oturum listesi ve iptali
         run: npm run verify:sessions
+
+      - name: Marka modülü — yetki, kapsam, CSV, soft delete, eşzamanlılık
+        run: npm run verify:brands
 
       # verify:a11y gerçek bir tarayıcıda klavye ve odak davranışını sınar;
       # pipeline'daki ilk Playwright adımı olduğu için tarayıcı burada kurulur.

@@ -3,6 +3,7 @@ import {
   erisilebilirMarka,
   govdeOku,
   hataYanit,
+  kritikIslemKapisi,
   markaOkuyabilenKullanici,
   rota,
   YOK,
@@ -47,6 +48,22 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }
 
     const govde = await govdeOku<Record<string, unknown>>(request);
+
+    /**
+     * Vergi bilgisi değiştirmek STEP-UP ister: bu alanlar faturaya ve resmî
+     * belgelere gider. Kapı yalnız alan GÖVDEDE GELDİĞİNDE kapanır — sıradan
+     * bir telefon güncellemesi için kullanıcıyı yeniden doğrulatmak, kapıyı
+     * anlamsızlaştırıp "her seferinde onayla"ya alıştırırdı.
+     *
+     * OPS'un gövdesinde bu alanlar zaten süzülüp düşer; kapı SA/FIN içindir.
+     */
+    if (
+      user.role !== "operations" &&
+      ("taxNumber" in govde || "taxOffice" in govde)
+    ) {
+      await kritikIslemKapisi(user, "brand.update_tax");
+    }
+
     const sonuc = await markaGuncelle({
       brandId: id,
       govde,

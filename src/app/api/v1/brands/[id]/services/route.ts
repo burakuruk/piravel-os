@@ -10,8 +10,8 @@ import {
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import {
   markadanHizmetCikar,
+  markaHizmetBagiYonetebilirMi,
   markaHizmetleri,
-  markaYonetebilirMi,
   markayaHizmetEkle,
 } from "@/lib/brand-admin";
 import { buildRequestContext } from "@/lib/request-context";
@@ -21,8 +21,10 @@ import { buildRequestContext } from "@/lib/request-context";
  * POST   /api/v1/brands/:id/services — hizmet ekler   (gövde: serviceId)
  * DELETE /api/v1/brands/:id/services — hizmet çıkarır (gövde: serviceId)
  *
- * Hizmet TÜRÜ burada oluşturulmaz; yalnız katalogdan seçilir.
- * Marka-hizmet bağı SA/FIN işidir — fiyatlandırma ve sözleşmeyi etkiler.
+ * Hizmet TÜRÜ burada oluşturulmaz; yalnız katalogdan seçilir — katalog SA'nın
+ * işidir. Markaya MEVCUT bir hizmeti bağlamak ise günlük operasyondur:
+ * SA ve FIN tüm markalarda, OPS yalnız ATANDIĞI markalarda yapabilir
+ * (kapsam `erisilebilirMarka` ile zorlanır), MEM erişemez.
  */
 
 export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -40,7 +42,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const user = await markaOkuyabilenKullanici();
     const { id } = await ctx.params;
     await erisilebilirMarka(user, id);
-    if (!markaYonetebilirMi(user.role)) {
+    if (!markaHizmetBagiYonetebilirMi(user.role)) {
       return hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403);
     }
 
@@ -73,7 +75,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     const user = await markaOkuyabilenKullanici();
     const { id } = await ctx.params;
     await erisilebilirMarka(user, id);
-    if (!markaYonetebilirMi(user.role)) {
+    if (!markaHizmetBagiYonetebilirMi(user.role)) {
       return hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403);
     }
 

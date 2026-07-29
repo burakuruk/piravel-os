@@ -74,21 +74,21 @@ Better Auth kendi uçlarını `/api/auth/*` altında sunar. **Bu uçlar bizim AP
 | GET | `/api/v1/brands` | Liste (filtre: `status`, `q`) | SA, FIN, OPS🔷 |
 | POST | `/api/v1/brands` | Marka oluştur | SA, FIN |
 | GET | `/api/v1/brands/:id` | Detay (+risk rozeti: `v_brand_payment_risk`) | SA, FIN, OPS🔷💰 |
-| PATCH | `/api/v1/brands/:id` | Güncelle (OPS: finansal olmayan alanlar) | SA, FIN, OPS🔷 |
-| POST | `/api/v1/brands/:id/status` | Yaşam döngüsü değişimi (gövde: `status`, `reason`) | SA, FIN |
+| PATCH | `/api/v1/brands/:id` | Güncelle (OPS: yalnız operasyonel alanlar; `taxNumber`/`taxOffice` gövdede varsa **step-up**) | SA, FIN, OPS🔷 |
+| POST | `/api/v1/brands/:id/status` | Yaşam döngüsü değişimi (gövde: `status`) — **step-up** | SA, FIN |
 | DELETE | `/api/v1/brands/:id` | Soft delete (aktif sözleşme varsa 422) | SA |
 | POST | `/api/v1/brands/:id/restore` | Geri yükle | SA |
 | GET | `/api/v1/brands/:id/contacts` | Yetkili kişiler | SA, FIN, OPS🔷 |
 | POST | `/api/v1/brands/:id/contacts` | Yetkili ekle | SA, FIN, OPS🔷 |
 | PATCH | `/api/v1/contacts/:id` | Yetkili güncelle | SA, FIN, OPS🔷 |
 | DELETE | `/api/v1/contacts/:id` | Soft delete | SA, FIN |
-| GET | `/api/v1/brands/:id/assignments` | Sorumlu ekip (yalnız atanmış OPS) | SA, FIN, OPS🔷 |
-| POST | `/api/v1/brands/:id/assignments` | Kullanıcı ata (gövde: `userId`) | SA, FIN |
-| DELETE | `/api/v1/brands/:id/assignments` | Atamayı kaldır (soft delete) | SA, FIN |
-| GET | `/api/v1/brands/:id/assignments/candidates` | Atanabilir kullanıcılar (`q=`) — **yalnız aktif OPS** | SA, FIN |
+| GET | `/api/v1/brands/:id/assignments` | Sorumlu ekip listesi (yalnız atanmış OPS) | SA, FIN, OPS🔷 |
+| POST | `/api/v1/brands/:id/assignments` | Kullanıcı ata (gövde: `userId`) — **step-up** | **yalnız SA** (diğerleri 404) |
+| DELETE | `/api/v1/brands/:id/assignments` | Atamayı kaldır (soft delete) — **step-up** | **yalnız SA** (diğerleri 404) |
+| GET | `/api/v1/brands/:id/assignments/candidates` | Atanabilir kullanıcılar (`q=`) — **yalnız aktif OPS** | **yalnız SA** (diğerleri 404) |
 | GET | `/api/v1/brands/:id/services` | Markanın aldığı hizmetler | SA, FIN, OPS🔷💰 |
-| POST | `/api/v1/brands/:id/services` | Hizmet ekle (gövde: `serviceId`) | SA, FIN |
-| DELETE | `/api/v1/brands/:id/services` | Hizmeti çıkar (soft delete) | SA, FIN |
+| POST | `/api/v1/brands/:id/services` | Hizmet bağla (gövde: `serviceId`) | SA, FIN, OPS🔷 |
+| DELETE | `/api/v1/brands/:id/services` | Hizmeti çıkar (soft delete) | SA, FIN, OPS🔷 |
 | GET | `/api/v1/brands/export` | Filtreli CSV — audit `export`; OPS kapsam + vergi sütunları çıkarılmış | SA, FIN, OPS🔷 |
 
 > **Sprint 2 notu.** Atama ucu `:id/users` değil `:id/assignments`'tır ve
@@ -101,10 +101,10 @@ Better Auth kendi uçlarını `/api/auth/*` altında sunar. **Bu uçlar bizim AP
 
 | Metot | Yol | Amaç | Roller |
 |---|---|---|---|
-| GET | `/api/v1/services` | Katalog | SA, FIN, OPS💰 |
-| POST | `/api/v1/services` | Hizmet tanımla | SA, FIN |
-| PATCH | `/api/v1/services/:id` | Güncelle | SA, FIN |
-| DELETE | `/api/v1/services/:id` | Soft delete | SA, FIN |
+| GET | `/api/v1/services` | Katalog | SA, FIN👁, OPS💰 |
+| POST | `/api/v1/services` | Hizmet tanımla | **yalnız SA** |
+| PATCH | `/api/v1/services/:id` | Güncelle / pasifleştir (`isActive:false` → step-up) | **yalnız SA** |
+| ~~DELETE~~ | ~~`/api/v1/services/:id`~~ | **Yoktur** — hizmet silinmez, pasifleştirilir | — |
 | GET | `/api/v1/contracts` | Liste (filtre: `brand_id`, `status`, `expiring_within`) | SA, FIN, OPS🔷💰 |
 | POST | `/api/v1/contracts` | Taslak oluştur (no otomatik: `PRV-YYYY-NNNN`) | SA, FIN |
 | GET | `/api/v1/contracts/:id` | Detay + kalemler + (SA/FIN) üretilmiş receivable özeti | SA, FIN, OPS🔷💰 |

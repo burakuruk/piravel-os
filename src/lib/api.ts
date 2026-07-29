@@ -86,16 +86,26 @@ export async function markaYonetenKullanici(): Promise<CurrentUser> {
   return user;
 }
 
-/** Ekip ataması (SA/FIN). */
+/**
+ * Ekip ataması YÖNETİMİ — yalnız SA, diğerleri 404.
+ *
+ * ⚠ Burada 403 değil 404 dönülür. Atama bir YETKİ DEVRİ ucudur; kimlerin
+ * yetki dağıtabildiği bilgisi de kapalıdır. FIN, OPS ve MEM için ucun varlığı
+ * görünmez. (Markanın "sorumlu ekip" LİSTESİ ayrıdır ve kapsam içindeki
+ * herkese açıktır — detay ekranı onu gösteriyor.)
+ */
 export async function atamaYonetenKullanici(): Promise<CurrentUser> {
-  const user = await markaOkuyabilenKullanici();
-  if (!atamaYonetebilirMi(user.role)) {
-    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
-  }
+  const user = await oturumluKullanici();
+  if (!atamaYonetebilirMi(user.role)) throw new RotaHatasi(YOK());
   return user;
 }
 
-/** Hizmet kataloğu yönetimi (SA/FIN). */
+/**
+ * Hizmet kataloğu YAZMA — yalnız SA.
+ *
+ * FIN ve OPS katalogu okur (modülü zaten görüyorlar, ucun varlığı sır değil)
+ * ama değiştiremez → 403. MEM modülü hiç görmediği için 404 alır.
+ */
 export async function hizmetYonetenKullanici(): Promise<CurrentUser> {
   const user = await markaOkuyabilenKullanici();
   if (!hizmetKatalogunuYonetebilirMi(user.role)) {

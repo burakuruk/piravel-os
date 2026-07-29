@@ -3,6 +3,7 @@ import {
   atamaYonetenKullanici,
   erisilebilirMarka,
   govdeOku,
+  kritikIslemKapisi,
   markaOkuyabilenKullanici,
   rota,
   yazmaIstegiDogrula,
@@ -12,13 +13,16 @@ import { atamaEkle, atamaKaldir, atamalariListele } from "@/lib/brand-admin";
 import { buildRequestContext } from "@/lib/request-context";
 
 /**
- * GET    /api/v1/brands/:id/assignments — sorumlu ekip (YALNIZ atanmış OPS)
- * POST   /api/v1/brands/:id/assignments — kullanıcı atar    (SA/FIN)
- * DELETE /api/v1/brands/:id/assignments — atamayı kaldırır  (SA/FIN)
+ * GET    /api/v1/brands/:id/assignments — sorumlu ekip listesi (kapsam içi herkes)
+ * POST   /api/v1/brands/:id/assignments — kullanıcı atar    (YALNIZ SA)
+ * DELETE /api/v1/brands/:id/assignments — atamayı kaldırır  (YALNIZ SA)
  *
  * ⚠ Atama bir YETKİ SINIRIDIR: kaldırıldığı anda OPS kullanıcısı markayı ve
  * ona bağlı kayıtları göremez — kapsam her istekte yeniden hesaplanır, açık
- * sekmede de bir sonraki istekte erişim kesilir.
+ * sekmede de bir sonraki istekte erişim kesilir. Bu yüzden yazma uçları
+ * yalnız SA'ya açıktır, diğer roller 404 görür ve her iki işlem de STEP-UP
+ * ister: yetki devri, açık bırakılmış bir ekranın başındaki biri tarafından
+ * yapılabilecek bir şey olmamalı.
  *
  * Yalnız OPS atanabilir; SA/FIN rolleri gereği zaten tüm markaları görür ve
  * listede "atanmış" görünmeleri yetki tablosunu yanıltırdı.
@@ -39,6 +43,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const user = await atamaYonetenKullanici();
     const { id } = await ctx.params;
     await erisilebilirMarka(user, id);
+    await kritikIslemKapisi(user, "brand.assignment_change");
 
     const govde = await govdeOku<{ userId?: string }>(request);
     const sonuc = await atamaEkle({
@@ -69,6 +74,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
     const user = await atamaYonetenKullanici();
     const { id } = await ctx.params;
     await erisilebilirMarka(user, id);
+    await kritikIslemKapisi(user, "brand.assignment_change");
 
     const govde = await govdeOku<{ userId?: string }>(request);
     const sonuc = await atamaKaldir({

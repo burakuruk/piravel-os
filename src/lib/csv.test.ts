@@ -14,10 +14,46 @@ describe("csvHucre — formül enjeksiyonu", () => {
     expect(cikti).toContain("cmd");
   });
 
-  it("+ - @ tab ve CR ile başlayanları da kapsar", () => {
-    for (const bas of ["+", "-", "@", "\t"]) {
-      expect(csvHucre(`${bas}zararli`).startsWith("'")).toBe(true);
+  it("=FORMULA +FORMULA -FORMULA @FORMULA hepsi kaçırılır", () => {
+    for (const bas of ["=", "+", "-", "@"]) {
+      const cikti = csvHucre(`${bas}FORMULA(1)`);
+      expect(cikti.startsWith("'")).toBe(true);
+      expect(cikti[1]).toBe(bas);
     }
+  });
+
+  it("başta sekme kaçırılır", () => {
+    expect(csvHucre("\t=FORMULA")).toBe("'\t=FORMULA");
+  });
+
+  it("başta carriage return / satır sonu kaçırılır", () => {
+    // \r tekilleştirilip \n olur; hücre tırnaklanır ve kaçış tırnağı başta kalır
+    expect(csvHucre("\r=FORMULA")).toBe(`"'\n=FORMULA"`);
+    expect(csvHucre("\n=FORMULA")).toBe(`"'\n=FORMULA"`);
+    expect(csvHucre("\r\n=FORMULA")).toBe(`"'\n=FORMULA"`);
+  });
+
+  it("BOŞLUKTAN SONRA formül karakteri de kaçırılır", () => {
+    /**
+     * Excel bir hücreyi değerlendirirken baştaki boşlukları yok sayar:
+     * " =1+1" da formüldür. İlk GÖRÜNEN karakteri ölçmek yetmez; ölçüt
+     * baştaki boşluklar atıldıktan sonraki ilk karakterdir.
+     */
+    for (const deger of [" =FORMULA", "   +FORMULA", " -FORMULA", "  @FORMULA"]) {
+      const cikti = csvHucre(deger);
+      expect(cikti.startsWith("'")).toBe(true);
+    }
+  });
+
+  it("BÖLÜNEMEZ boşluktan sonraki formül karakteri de kaçırılır", () => {
+    // Word'den yapıştırılan metin sıkça U+00A0 taşır; gözle normal boşluktan
+    // ayırt edilemez ve saf bir " " kırpması onu atlar.
+    expect(csvHucre(" =FORMULA").startsWith("'")).toBe(true);
+    expect(csvHucre("  +FORMULA").startsWith("'")).toBe(true);
+  });
+
+  it("boşlukla başlayan zararsız metin bozulmaz", () => {
+    expect(csvHucre("  Sahte Vize")).toBe("  Sahte Vize");
   });
 
   it("negatif sayı da kaçırılır — doğruluk değil güvenlik önce gelir", () => {

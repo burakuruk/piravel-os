@@ -45,8 +45,8 @@
 | brand_contacts · list/read | ✅ | ✅ | 🔷 | ❌ |
 | brand_contacts · create/update | ✅ | ✅ | 🔷 | ❌ |
 | brand_contacts · delete/restore | ✅ | ✅ | ❌ | ❌ |
-| brand_assignments · list | ✅ | ✅ | 🔷 (kendi atamaları) | ❌ |
-| brand_assignments · atama/kaldırma | ✅ | ✅ | ❌ | ❌ |
+| brand_assignments · list (sorumlu ekip) | ✅ | ✅ | 🔷 (atandığı markalar) | ❌ |
+| brand_assignments · **atama/kaldırma** | ✅ | ❌ (404) | ❌ (404) | ❌ (404) |
 | brand_services · list | ✅ | ✅ | 🔷 | ❌ |
 | brand_services · ekleme/çıkarma | ✅ | ✅ | ❌ | ❌ |
 
@@ -54,9 +54,20 @@
 
 - OPS kapsamının kaynağı `brand_assignments`'tır; `brand_users` v3 müşteri
   paneli kancasıdır ve yetki sınırı DEĞİLDİR.
-- Markaya **yalnız OPS atanabilir**. SA ve FIN aday aramasına hiç girmez (rol
-  gereği zaten tüm markaları görürler); MEM bu sprintte atanmaz. Marka
-  detayındaki "sorumlu ekip" de yalnız açıkça atanmış OPS'u listeler.
+- **Atama YALNIZ SA'nın işidir.** Atama erişim verir; kimin yetki dağıtabildiği
+  tek elde durur. FIN, OPS ve MEM yazma uçlarında ve aday aramasında **404**
+  görür — 403 dönmek "böyle bir uç var" bilgisini sızdırırdı. Sorumlu ekip
+  LİSTESİ ayrıdır ve kapsam içindeki herkese açıktır (marka detayı onu
+  gösterir).
+- Markaya **yalnız aktif OPS atanabilir**. SA, FIN ve MEM `brand_assignments`
+  tablosuna eklenemez; aday aramasına da girmezler. Marka detayındaki "sorumlu
+  ekip" yalnız açıkça atanmış OPS'u listeler — elle yazılmış bir SA/FIN satırı
+  bile gösterilmez.
+- **Step-up gerektiren marka işlemleri:** marka durumu değişimi
+  (`brand.status_change`), vergi bilgisi güncelleme (`brand.update_tax`),
+  atama/kaldırma (`brand.assignment_change`), hizmet pasifleştirme
+  (`service.deactivate`). Sıradan alan güncellemeleri kapıyı tetiklemez —
+  her işlemde yeniden doğrulatmak kullanıcıyı onaya körleştirir.
 - OPS yanıtından `tax_number` ve `tax_office` **çıkarılır** — liste, detay,
   arama, filtre ve CSV dahil. OPS güncelleme gövdesinde bu alanlar
   yok sayılır.
@@ -68,8 +79,16 @@
 
 | Kaynak · İşlem | SA | FIN | OPS | MEM |
 |---|---|---|---|---|
-| services · list/read | ✅ | ✅ | 💰 (fiyat/maliyet alanları çıkarılır) | ❌ |
-| services · create/update/delete | ✅ | ✅ | ❌ | ❌ |
+| services · list/read | ✅ | 👁 | 💰 (fiyat/maliyet alanları çıkarılır) | ❌ |
+| services · create/update/**pasifleştirme** | ✅ | ❌ | ❌ | ❌ |
+| brand_services · marka-hizmet bağlama/çıkarma | ✅ | ✅ | 🔷 | ❌ |
+
+> **Katalog yalnız SA'nındır (Sprint 2 kararı).** Hizmet TÜRÜ tanımlamak
+> fiyatlandırmayı ve sözleşme şablonlarını etkiler; muhasebe kaydı girmekten
+> farklı bir karardır. FIN katalogu okur, değiştiremez. Markaya MEVCUT bir
+> hizmeti bağlamak ayrı bir işlemdir ve günlük operasyonun parçasıdır: SA/FIN
+> tüm markalarda, OPS yalnız atandığı markalarda. `services` için DELETE
+> **yoktur** — hizmet pasifleştirilir.
 | contracts · list/read | ✅ | ✅ | 🔷💰 (kapsam görünür, tutarlar çıkarılır) | ❌ |
 | contracts · create/update (draft) | ✅ | ✅ | ❌ | ❌ |
 | contracts · **activate** | ✅ | ✅ | ❌ | ❌ |
@@ -199,6 +218,10 @@ değil üstüne** biner.
 | super_admin / finance oluşturma | `user.create_privileged` |
 | Tüm oturumları iptal etme | `user.revoke_all_sessions` |
 | 2FA sıfırlama | `user.reset_two_factor` |
+| Marka durumu değişimi (pasifleştirme dâhil) | `brand.status_change` |
+| Marka vergi bilgisi güncelleme | `brand.update_tax` |
+| Markaya kullanıcı atama / kaldırma | `brand.assignment_change` |
+| Hizmet pasifleştirme | `service.deactivate` |
 | Maskesiz IBAN görüntüleme | `bank_account.view_unmasked_iban` |
 | Allocation reverse | `allocation.reverse` |
 | Refund | `receivable.refund` |

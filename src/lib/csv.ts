@@ -15,8 +15,13 @@
  *      bozar: "Örnek Mimarlık" → "Ã–rnek MimarlÄ±k".
  */
 
-/** Excel'de formül başlatabilen ilk karakterler. */
-const TEHLIKELI_BAS = new Set(["=", "+", "-", "@", "\t", "\r"]);
+/**
+ * Excel'de formül başlatabilen ilk karakterler.
+ *
+ * Sekme ve satır sonları formül değildir ama hücre/kayıt sınırını bozabildiği
+ * için aynı muameleyi görür — OWASP'ın CSV enjeksiyonu listesindeki küme.
+ */
+const TEHLIKELI_BAS = new Set(["=", "+", "-", "@", "\t", "\r", "\n"]);
 
 /** Excel (Windows) UTF-8'i ancak BOM ile doğru tanır. */
 export const UTF8_BOM = "﻿";
@@ -42,7 +47,21 @@ export function csvHucre(deger: unknown): string {
    */
   metin = metin.replace(/\r\n?/g, "\n");
 
-  if (metin.length > 0 && TEHLIKELI_BAS.has(metin[0]!)) {
+  /**
+   * ⚠ Ölçüt "ilk karakter" DEĞİL, baştaki BOŞLUKLAR atıldıktan sonraki ilk
+   * karakterdir: Excel bir hücreyi değerlendirirken baştaki boşlukları yok
+   * sayar, yani `" =1+1"` de formüldür. Yalnız `metin[0]`'a bakan bir kontrol
+   * tek bir boşlukla atlatılırdı.
+   *
+   * Kırpma normal boşlukla sınırlı değil: Word'den yapıştırılan metin sıklıkla
+   * BÖLÜNEMEZ BOŞLUK (U+00A0) taşır ve `\s` bazı ortamlarda onu kapsamaz.
+   * Küme bu yüzden açıkça yazılır.
+   *
+   * Sekme ve satır sonu ayrıca kendi başlarına tehlikelidir (bazı
+   * ayrıştırıcılar hücreyi/kaydı böler); onlar kırpılmadan da yakalanır.
+   */
+  const ilkAnlamli = metin.replace(/^[\s   -   　﻿]+/, "")[0];
+  if (metin.length > 0 && (TEHLIKELI_BAS.has(metin[0]!) || TEHLIKELI_BAS.has(ilkAnlamli!))) {
     metin = `'${metin}`;
   }
 

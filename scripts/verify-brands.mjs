@@ -104,16 +104,28 @@ function client() {
   };
 }
 
-/** 2FA zorunlu roller için kurulumu tamamlayarak giriş yapar. */
+/** 2FA zorunlu roller için kurulumu tamamlayarak giriş yapar; sırrı döner. */
 async function girisYap(c, email, ikiFaKur = false) {
   await c.post("/api/auth/sign-in/email", { email, password: PAROLA });
-  if (!ikiFaKur) return;
+  if (!ikiFaKur) return null;
   const enable = await c.post("/api/auth/two-factor/enable", { password: PAROLA });
   const uri = enable.json?.totpURI ?? enable.json?.totpUri;
-  if (uri) {
-    const secret = new URL(uri.replace("otpauth://", "http://")).searchParams.get("secret");
-    await c.post("/api/auth/two-factor/verify-totp", { code: totp(secret) });
-  }
+  if (!uri) return null;
+  const secret = new URL(uri.replace("otpauth://", "http://")).searchParams.get("secret");
+  await c.post("/api/auth/two-factor/verify-totp", { code: totp(secret) });
+  return secret;
+}
+
+/**
+ * Step-up alır. Kritik işlemler bunsuz SESSION_STALE döner.
+ *
+ * ⚠ 2FA açık kullanıcıda TOTP zorunludur; yalnız parola yetmez.
+ */
+async function stepUpAl(c, secret) {
+  return c.post("/api/v1/reauth", {
+    password: PAROLA,
+    ...(secret ? { totpCode: totp(secret) } : {}),
+  });
 }
 
 // ── Fixture ───────────────────────────────────────────────────────────────
@@ -166,8 +178,8 @@ const sa = client();
 const fin = client();
 const ops = client();
 const mem = client();
-await girisYap(sa, "admin@example.com", true);
-await girisYap(fin, "finance@example.com", true);
+const saSecret = await girisYap(sa, "admin@example.com", true);
+const finSecret = await girisYap(fin, "finance@example.com", true);
 await girisYap(ops, "operations@example.com");
 await girisYap(mem, "member@example.com");
 
@@ -310,6 +322,44 @@ console.log("\n═══ 3. OPS kapsamı — yalnız atandığı markalar ══
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 3b. brand_users kapsam vermez (eski tablo) ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  /**
+   * ⚠ REGRESYON KORUMASI. `brand_users` v3 müşteri paneli kancasıdır ve
+   * ERİŞİM KAYNAĞI DEĞİLDİR. Kapsam sorgusu bir gün yanlışlıkla o tabloya
+   * dönerse bu kontrol düşer: elle yazılmış bir brand_users satırı OPS'a
+   * hiçbir kapı açmamalı.
+   */
+  const opsUserId = (
+    await sql.query("SELECT id FROM users WHERE email = 'operations@example.com'")
+  ).rows[0].id;
+  await sql.query(
+    "INSERT INTO brand_users (brand_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    [markaB, opsUserId],
+  );
+
+  const liste = await ops.get("/api/v1/brands");
+  const kodlar = (liste.json?.brands ?? []).map((b) => b.code);
+  check(
+    "brand_users satırı OPS'a marka ERİŞİMİ VERMİYOR",
+    !kodlar.includes(KOD("B")),
+    `görünen: ${kodlar.join(",") || "yok"}`,
+  );
+
+  const detay = await ops.get(`/api/v1/brands/${markaB}`);
+  check("brand_users satırıyla detay da açılmıyor (404)", detay.status === 404, `HTTP ${detay.status}`);
+
+  const csv = await ops.get("/api/v1/brands/export");
+  check("brand_users satırı CSV'ye de marka sokmuyor", !csv.text.includes(KOD("B")));
+
+  await sql.query("DELETE FROM brand_users WHERE brand_id = $1 AND user_id = $2", [
+    markaB,
+    opsUserId,
+  ]);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 console.log("\n═══ 4. Ekip ataması — yalnız OPS atanabilir ═══");
 // ═══════════════════════════════════════════════════════════════════════════
 const opsId = (await sql.query("SELECT id FROM users WHERE email = 'operations@example.com'")).rows[0].id;
@@ -317,9 +367,29 @@ const finId = (await sql.query("SELECT id FROM users WHERE email = 'finance@exam
 const saId = (await sql.query("SELECT id FROM users WHERE email = 'admin@example.com'")).rows[0].id;
 const memId = (await sql.query("SELECT id FROM users WHERE email = 'member@example.com'")).rows[0].id;
 {
-  const adaylar = await fin.get(`/api/v1/brands/${markaA}/assignments/candidates`);
+  // ── Atama uçları YALNIZ SA'ya açık; diğerleri ucun varlığını görmez ──
+  for (const [ad, c] of [["FIN", fin], ["OPS", ops], ["MEM", mem]]) {
+    const aday = await c.get(`/api/v1/brands/${markaA}/assignments/candidates`);
+    check(`${ad} aday listesinde 404 alır`, aday.status === 404, `HTTP ${aday.status}`);
+    const ekle = await c.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+    check(`${ad} atama YAPAMAZ (404)`, ekle.status === 404, `HTTP ${ekle.status}`);
+    const sil = await c.del(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+    check(`${ad} atama KALDIRAMAZ (404)`, sil.status === 404, `HTTP ${sil.status}`);
+  }
+
+  // ── Step-up olmadan SA bile atayamaz ──
+  const stepUpsuz = await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  check(
+    "SA step-up almadan atama yapamaz (403 SESSION_STALE)",
+    stepUpsuz.status === 403 && stepUpsuz.json?.error?.code === "SESSION_STALE",
+    `HTTP ${stepUpsuz.status} ${stepUpsuz.json?.error?.code ?? ""}`,
+  );
+  const yukselt = await stepUpAl(sa, saSecret);
+  check("SA step-up aldı", yukselt.status === 200, `HTTP ${yukselt.status}`);
+
+  const adaylar = await sa.get(`/api/v1/brands/${markaA}/assignments/candidates`);
   const roller = new Set((adaylar.json?.candidates ?? []).map((k) => k.role));
-  check("Aday listesi 200 döndü", adaylar.status === 200, `HTTP ${adaylar.status}`);
+  check("SA aday listesini görüyor", adaylar.status === 200, `HTTP ${adaylar.status}`);
   check(
     "Aday listesinde YALNIZ operations var (SA/FIN/MEM yok)",
     roller.size <= 1 && (roller.size === 0 || roller.has("operations")),
@@ -327,22 +397,29 @@ const memId = (await sql.query("SELECT id FROM users WHERE email = 'member@examp
   );
 
   for (const [ad, id] of [["FIN", finId], ["SA", saId], ["MEM", memId]]) {
-    const dene = await fin.post(`/api/v1/brands/${markaA}/assignments`, { userId: id });
+    const dene = await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: id });
     check(
-      `${ad} markaya atanamaz (422 USER_NOT_ASSIGNABLE)`,
+      `${ad} kullanıcısı brand_assignments'a eklenemez (422 USER_NOT_ASSIGNABLE)`,
       dene.status === 422 && dene.json?.error?.code === "USER_NOT_ASSIGNABLE",
       `HTTP ${dene.status} ${dene.json?.error?.code ?? ""}`,
     );
+    const satir = await sql.query(
+      "SELECT count(*)::int AS n FROM brand_assignments WHERE brand_id = $1 AND user_id = $2",
+      [markaA, id],
+    );
+    check(`${ad} için tabloya satır YAZILMADI`, satir.rows[0].n === 0, `${satir.rows[0].n} satır`);
   }
 
-  const opsAta = await ops.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
-  check("OPS kendini atayamaz (403/404)", opsAta.status === 403 || opsAta.status === 404, `HTTP ${opsAta.status}`);
-
-  const ata = await fin.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
-  check("FIN operasyon kullanıcısını atadı", ata.status === 201, `HTTP ${ata.status}`);
+  const ata = await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  check("SA operasyon kullanıcısını atadı", ata.status === 201, `HTTP ${ata.status}`);
 
   const ekip = await fin.get(`/api/v1/brands/${markaA}/assignments`);
   const ekipRoller = new Set((ekip.json?.assignments ?? []).map((a) => a.role));
+  check(
+    "FIN sorumlu ekip LİSTESİNİ görebiliyor (yazma ayrı)",
+    ekip.status === 200,
+    `HTTP ${ekip.status}`,
+  );
   check(
     "Sorumlu ekipte yalnız OPS listeleniyor",
     ekipRoller.size === 1 && ekipRoller.has("operations"),
@@ -366,7 +443,7 @@ const memId = (await sql.query("SELECT id FROM users WHERE email = 'member@examp
     finId,
   ]);
 
-  const adaylar2 = await fin.get(`/api/v1/brands/${markaA}/assignments/candidates`);
+  const adaylar2 = await sa.get(`/api/v1/brands/${markaA}/assignments/candidates`);
   check(
     "Atanmış kullanıcı aday listesinden düştü",
     !(adaylar2.json?.candidates ?? []).some((k) => k.id === opsId),
@@ -419,6 +496,48 @@ console.log("\n═══ 5. Atama sonrası kapsam ve vergi alanları ═══")
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 5b. Step-up: vergi bilgisi ve marka pasifleştirme ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  const durumStepUpsuz = await fin.post(`/api/v1/brands/${markaA}/status`, {
+    status: "suspended",
+  });
+  check(
+    "Marka pasifleştirme step-up ister (403 SESSION_STALE)",
+    durumStepUpsuz.status === 403 && durumStepUpsuz.json?.error?.code === "SESSION_STALE",
+    `HTTP ${durumStepUpsuz.status} ${durumStepUpsuz.json?.error?.code ?? ""}`,
+  );
+
+  const vergiStepUpsuz = await fin.patch(`/api/v1/brands/${markaA}`, {
+    taxNumber: "1111111111",
+  });
+  check(
+    "Vergi bilgisi değiştirme step-up ister (403 SESSION_STALE)",
+    vergiStepUpsuz.status === 403 && vergiStepUpsuz.json?.error?.code === "SESSION_STALE",
+    `HTTP ${vergiStepUpsuz.status} ${vergiStepUpsuz.json?.error?.code ?? ""}`,
+  );
+
+  const sadeceTelefon = await fin.patch(`/api/v1/brands/${markaA}`, { phone: "+90 555 111 2222" });
+  check(
+    "Sıradan alan güncellemesi step-up İSTEMEZ",
+    sadeceTelefon.status === 200,
+    `HTTP ${sadeceTelefon.status}`,
+  );
+
+  const yukselt = await stepUpAl(fin, finSecret);
+  check("FIN step-up aldı", yukselt.status === 200, `HTTP ${yukselt.status}`);
+
+  const vergi = await fin.patch(`/api/v1/brands/${markaA}`, { taxNumber: "1111111111" });
+  check("Step-up sonrası vergi güncellendi", vergi.status === 200, `HTTP ${vergi.status}`);
+  const kontrol = await sa.get(`/api/v1/brands/${markaA}`);
+  check("Yeni vergi numarası kaydedildi", kontrol.json?.brand?.taxNumber === "1111111111");
+
+  const durum = await fin.post(`/api/v1/brands/${markaA}/status`, { status: "suspended" });
+  check("Step-up sonrası marka pasifleştirildi", durum.status === 200, `HTTP ${durum.status}`);
+  await fin.post(`/api/v1/brands/${markaA}/status`, { status: "active" });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 console.log("\n═══ 6. Hizmet kataloğu ═══");
 // ═══════════════════════════════════════════════════════════════════════════
 let hizmet1;
@@ -436,10 +555,43 @@ let hizmetPasif;
   const opsHizmet = await ops.post("/api/v1/services", { code: `DGH9${DAMGA}`, name: "OPS" });
   check("OPS hizmet tanımlayamaz (403)", opsHizmet.status === 403, `HTTP ${opsHizmet.status}`);
 
+  const finHizmet = await fin.post("/api/v1/services", { code: `DGH8${DAMGA}`, name: "FIN" });
+  check(
+    "FIN hizmet TANIMLAYAMAZ — katalog yalnız SA (403)",
+    finHizmet.status === 403,
+    `HTTP ${finHizmet.status}`,
+  );
+  const finDuzenle = await fin.patch(`/api/v1/services/${hizmet1}`, { name: "FIN denemesi" });
+  check(
+    "FIN hizmet DÜZENLEYEMEZ (403)",
+    finDuzenle.status === 403,
+    `HTTP ${finDuzenle.status}`,
+  );
+  const finKatalog = await fin.get("/api/v1/services");
+  check("FIN katalogu OKUYABİLİYOR", finKatalog.status === 200, `HTTP ${finKatalog.status}`);
+
   const h2 = await sa.post("/api/v1/services", { code: `dgh2${DAMGA}`, name: "Pasif Hizmet" });
   hizmetPasif = h2.json?.service?.id;
+
+  /**
+   * SA'nın 4. bölümde aldığı yükseltme burada bilerek DÜŞÜRÜLÜR: pasifleştirme
+   * kapısının gerçekten kapalı olduğu, yalnız "yükseltme yokken" görülebilir.
+   */
+  await sql.query(
+    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id FROM users WHERE email = 'admin@example.com')",
+  );
+  const stepUpsuz = await sa.patch(`/api/v1/services/${hizmetPasif}`, { isActive: false });
+  check(
+    "Hizmet pasifleştirme step-up ister (403 SESSION_STALE)",
+    stepUpsuz.status === 403 && stepUpsuz.json?.error?.code === "SESSION_STALE",
+    `HTTP ${stepUpsuz.status} ${stepUpsuz.json?.error?.code ?? ""}`,
+  );
+  const adDegis = await sa.patch(`/api/v1/services/${hizmetPasif}`, { name: "Pasif Hizmet v2" });
+  check("Ad düzeltmesi step-up İSTEMEZ", adDegis.status === 200, `HTTP ${adDegis.status}`);
+
+  await stepUpAl(sa, saSecret);
   const pasiflestir = await sa.patch(`/api/v1/services/${hizmetPasif}`, { isActive: false });
-  check("Hizmet pasifleştirilebiliyor", pasiflestir.status === 200, `HTTP ${pasiflestir.status}`);
+  check("Step-up sonrası hizmet pasifleştirildi", pasiflestir.status === 200, `HTTP ${pasiflestir.status}`);
 
   const katalog = await ops.get("/api/v1/services");
   const kayit = (katalog.json?.services ?? []).find((s) => s.code === `DGH1${DAMGA}`) ?? {};
@@ -467,8 +619,17 @@ console.log("\n═══ 7. Markanın hizmetleri — soft delete ve yeniden ekle
     `HTTP ${pasifEkle.status} ${pasifEkle.json?.error?.code ?? ""}`,
   );
 
-  const opsEkle = await ops.post(`/api/v1/brands/${markaA}/services`, { serviceId: hizmet1 });
-  check("OPS markaya hizmet ekleyemez (403)", opsEkle.status === 403, `HTTP ${opsEkle.status}`);
+  const opsKapsamDisi = await ops.post(`/api/v1/brands/${markaB}/services`, {
+    serviceId: hizmet1,
+  });
+  check(
+    "OPS atanmadığı markaya hizmet bağlayamaz (404)",
+    opsKapsamDisi.status === 404,
+    `HTTP ${opsKapsamDisi.status}`,
+  );
+
+  const memEkle = await mem.post(`/api/v1/brands/${markaA}/services`, { serviceId: hizmet1 });
+  check("MEM hizmet bağlama ucunda 404", memEkle.status === 404, `HTTP ${memEkle.status}`);
 
   const cikar = await fin.del(`/api/v1/brands/${markaA}/services`, { serviceId: hizmet1 });
   check("Hizmet markadan çıkarıldı", cikar.status === 200, `HTTP ${cikar.status}`);
@@ -483,12 +644,72 @@ console.log("\n═══ 7. Markanın hizmetleri — soft delete ve yeniden ekle
     `${kalan.rows.length} satır`,
   );
 
-  const yenidenEkle = await fin.post(`/api/v1/brands/${markaA}/services`, { serviceId: hizmet1 });
+  const yenidenEkle = await ops.post(`/api/v1/brands/${markaA}/services`, { serviceId: hizmet1 });
   check(
-    "Çıkarılan hizmet yeniden eklenebiliyor (partial unique index)",
+    "OPS atandığı markada çıkarılan hizmeti yeniden ekleyebiliyor (partial unique index)",
     yenidenEkle.status === 201,
     `HTTP ${yenidenEkle.status}`,
   );
+
+  const canli = await sql.query(
+    "SELECT count(*)::int AS n FROM brand_services WHERE brand_id = $1 AND service_id = $2 AND deleted_at IS NULL",
+    [markaA, hizmet1],
+  );
+  check("Yeniden ekleme sonrası TEK canlı kayıt var", canli.rows[0].n === 1, `${canli.rows[0].n}`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 7b. Eşzamanlılık — iki paralel ekleme, tek aktif kayıt ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  /**
+   * ⚠ "Önce SELECT sonra INSERT" deseni tek başına yarışa açıktır: iki istek
+   * de "kayıt yok" görüp ikisi de yazabilir. Partial unique index bu yüzden
+   * var — ikinci yazma DB'de düşer. Burada sınanan şey tam olarak budur.
+   */
+  const hizmetY = (
+    await sa.post("/api/v1/services", { code: `DGH3${DAMGA}`, name: "Yarış Hizmeti" })
+  ).json?.service?.id;
+
+  const paralel = await Promise.all([
+    fin.post(`/api/v1/brands/${markaB}/services`, { serviceId: hizmetY }),
+    fin.post(`/api/v1/brands/${markaB}/services`, { serviceId: hizmetY }),
+  ]);
+  const basarili = paralel.filter((r) => r.status === 201 || r.status === 200).length;
+  const canli = await sql.query(
+    "SELECT count(*)::int AS n FROM brand_services WHERE brand_id = $1 AND service_id = $2 AND deleted_at IS NULL",
+    [markaB, hizmetY],
+  );
+  check(
+    "İki paralel hizmet eklemede TEK aktif kayıt oluştu",
+    canli.rows[0].n === 1,
+    `${canli.rows[0].n} canlı kayıt · ${basarili}/2 istek başarılı · durumlar: ${paralel.map((r) => r.status).join(",")}`,
+  );
+  check(
+    "Paralel isteklerin hiçbiri 500 dönmedi",
+    paralel.every((r) => r.status < 500),
+    paralel.map((r) => r.status).join(","),
+  );
+
+  // Aynı yarış atama tarafında (SA + step-up gerekir)
+  await stepUpAl(sa, saSecret);
+  const paralelAtama = await Promise.all([
+    sa.post(`/api/v1/brands/${markaB}/assignments`, { userId: opsId }),
+    sa.post(`/api/v1/brands/${markaB}/assignments`, { userId: opsId }),
+  ]);
+  const canliAtama = await sql.query(
+    "SELECT count(*)::int AS n FROM brand_assignments WHERE brand_id = $1 AND user_id = $2 AND deleted_at IS NULL",
+    [markaB, opsId],
+  );
+  check(
+    "İki paralel atamada TEK aktif kayıt oluştu",
+    canliAtama.rows[0].n === 1,
+    `${canliAtama.rows[0].n} canlı kayıt · durumlar: ${paralelAtama.map((r) => r.status).join(",")}`,
+  );
+
+  // markaB'yi kapsam dışına geri al: sonraki CSV kontrolleri buna dayanıyor
+  await sa.del(`/api/v1/brands/${markaB}/assignments`, { userId: opsId });
+  await fin.del(`/api/v1/brands/${markaB}/services`, { serviceId: hizmetY });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -578,7 +799,7 @@ console.log("\n═══ 9. CSV dışa aktarma ═══");
   const opsCsv = await ops.get("/api/v1/brands/export");
   check("OPS CSV indirebiliyor", opsCsv.status === 200, `HTTP ${opsCsv.status}`);
   check("OPS CSV'sinde VERGI NO sütunu YOK", !opsCsv.text.includes("VERGI NO"));
-  check("OPS CSV'sinde vergi DEĞERİ de yok", !opsCsv.text.includes("1234567890"));
+  check("OPS CSV'sinde vergi DEĞERİ de yok", !opsCsv.text.includes("1111111111"));
   check("OPS CSV'sinde atandığı marka var", opsCsv.text.includes(KOD("A")));
   check("OPS CSV'sinde atanmadığı marka YOK", !opsCsv.text.includes(KOD("B")));
 
@@ -600,7 +821,8 @@ console.log("\n═══ 9. CSV dışa aktarma ═══");
 console.log("\n═══ 10. Atama kaldırılınca erişim kesilir ═══");
 // ═══════════════════════════════════════════════════════════════════════════
 {
-  const kaldir = await fin.del(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  await stepUpAl(sa, saSecret);
+  const kaldir = await sa.del(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
   check("Atama kaldırıldı", kaldir.status === 200, `HTTP ${kaldir.status}`);
 
   const detay = await ops.get(`/api/v1/brands/${markaA}`);
@@ -622,8 +844,14 @@ console.log("\n═══ 10. Atama kaldırılınca erişim kesilir ═══");
     kayit.rows.length === 1 && kayit.rows[0].deleted_at !== null,
   );
 
-  const tekrar = await fin.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  const tekrar = await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
   check("Kaldırılan atama yeniden verilebiliyor", tekrar.status === 201, `HTTP ${tekrar.status}`);
+
+  const canli = await sql.query(
+    "SELECT count(*)::int AS n FROM brand_assignments WHERE brand_id = $1 AND user_id = $2 AND deleted_at IS NULL",
+    [markaA, opsId],
+  );
+  check("Yeniden atama sonrası TEK canlı kayıt", canli.rows[0].n === 1, `${canli.rows[0].n}`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

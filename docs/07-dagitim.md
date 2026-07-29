@@ -31,6 +31,33 @@ sorgularını yanıltabilir.
 
 ---
 
+## 1b. Veritabanı ön koşulu: `pg_trgm` eklentisi
+
+**Migration `0010` `CREATE EXTENSION IF NOT EXISTS pg_trgm` çalıştırır ve bu
+ZORUNLUDUR.** Marka araması tek kutuda ad VEYA kod üzerinde ve baştan değil
+İÇERİDEN eşleşir (`ILIKE '%klinik%'`); B-tree bu deseni kullanamaz, trigram
+indeksi kullanabilir. Eklenti olmadan `0010` uygulanmaz.
+
+| Konu | Kural |
+|---|---|
+| Kim çalıştırır | Migration'lar **owner** (`DATABASE_ADMIN_URL`) ile koşar. `piravel_app` rolünün eklenti kurma yetkisi yoktur ve gerekmez |
+| Nerede var | `postgres:16` resmî imajında ve yaygın yönetilen servislerde (RDS, Cloud SQL, Azure, Supabase, Neon) contrib olarak bulunur |
+| Desteklenmiyorsa | **Dağıtım açık hatayla durur.** `db:migrate` adımı `ERROR: extension "pg_trgm" is not available` ile düşer; pipeline yeşile dönmez. Bu bilinçli bir tercihtir — arama indeksi sessizce atlanıp üretimde her aramanın tabloyu baştan sona taraması, fark edilmesi aylar süren bir yavaşlama olurdu |
+| Nasıl önceden doğrulanır | Dağıtımdan **önce** hedef veritabanında: |
+
+```bash
+# 1. Eklenti kurulabiliyor mu (owner bağlantısıyla)
+psql "$DATABASE_ADMIN_URL" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+
+# 2. Yapının tamamı doğrulanır (tablo · kısıt · index · trigger · eklenti)
+npm run verify:schema
+```
+
+Yönetilen servis eklentiye izin vermiyorsa dağıtım **denenmeden** durdurulmalı:
+alternatif (arama indeksini kaldırmak) bir ürün kararıdır ve ayrıca onaylanmalıdır.
+
+---
+
 ## 2. `TRUSTED_PROXY_HOPS` — hosting ortamına göre belirlenir
 
 Bu değer **uygulamanın önündeki ters proxy sayısıdır**. Tahmin edilmez,

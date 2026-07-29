@@ -1,11 +1,17 @@
 import { headers as gelenBasliklar } from "next/headers";
-import { govdeOku, hizmetYonetenKullanici, rota, yazmaIstegiDogrula } from "@/lib/api";
+import {
+  govdeOku,
+  hizmetYonetenKullanici,
+  kritikIslemKapisi,
+  rota,
+  yazmaIstegiDogrula,
+} from "@/lib/api";
 import { yonetimAuditYaz } from "@/lib/admin-audit";
 import { hizmetGuncelle } from "@/lib/brand-admin";
 import { buildRequestContext } from "@/lib/request-context";
 
 /**
- * PATCH /api/v1/services/:id — hizmeti günceller veya PASİFLEŞTİRİR (SA/FIN)
+ * PATCH /api/v1/services/:id — hizmeti günceller veya PASİFLEŞTİRİR (YALNIZ SA)
  *
  * ⚠ DELETE ucu YOKTUR ve bilerek yoktur: hizmet silinmez, `isActive=false`
  * ile pasifleştirilir. Geçmiş sözleşmeler ve faturalar ona referans verecek;
@@ -18,6 +24,15 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const user = await hizmetYonetenKullanici();
     const { id } = await ctx.params;
     const govde = await govdeOku<Record<string, unknown>>(request);
+
+    /**
+     * Pasifleştirme STEP-UP ister: hizmet katalogdan düştüğü anda yeni
+     * markalara atanamaz hâle gelir ve satış tarafı bunu anında hisseder.
+     * Ad/açıklama düzeltmesi aynı ağırlıkta değildir, kapıyı tetiklemez.
+     */
+    if (govde.isActive === false) {
+      await kritikIslemKapisi(user, "service.deactivate");
+    }
 
     const sonuc = await hizmetGuncelle({ serviceId: id, govde, aktorId: user.id });
 

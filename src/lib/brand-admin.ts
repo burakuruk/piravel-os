@@ -100,14 +100,39 @@ export function markaSilebilirMi(role: UserRole): boolean {
   return role === "super_admin";
 }
 
-/** Ekip ataması yalnız SA ve FIN. */
+/**
+ * Ekip ataması YALNIZ SA.
+ *
+ * Atama erişim verir: OPS kullanıcısı atandığı markayı görür, kaldırıldığında
+ * göremez. Yani bu uç bir yetki devri ucudur ve finansın işi değildir. FIN
+ * markaları rolü gereği zaten görür; başkasına erişim açma yetkisi ayrı bir
+ * şeydir ve tek elde durur.
+ */
 export function atamaYonetebilirMi(role: UserRole): boolean {
-  return role === "super_admin" || role === "finance";
+  return role === "super_admin";
 }
 
-/** Hizmet kataloğu yönetimi: SA ve FIN (docs/02 §3.2). */
+/**
+ * Hizmet kataloğu yönetimi YALNIZ SA.
+ *
+ * Katalog fiyatlandırmayı ve sözleşme şablonlarını etkiler; yeni bir hizmet
+ * TÜRÜ tanımlamak muhasebe kaydı girmekten farklı bir karardır. FIN ve OPS
+ * katalogu okur, değiştiremez.
+ */
 export function hizmetKatalogunuYonetebilirMi(role: UserRole): boolean {
-  return role === "super_admin" || role === "finance";
+  return role === "super_admin";
+}
+
+/**
+ * Markaya MEVCUT bir hizmeti bağlamak — katalogdan farklı bir işlem.
+ *
+ * Katalog "hangi hizmetleri satıyoruz" sorusudur (SA); bu ise "bu müşteri
+ * hangilerini alıyor" sorusudur ve günlük operasyonun parçasıdır. SA ve FIN
+ * tüm markalarda, OPS yalnız atandığı markalarda yapabilir — kapsam ayrıca
+ * `erisilebilirMarka` ile zorlanır.
+ */
+export function markaHizmetBagiYonetebilirMi(role: UserRole): boolean {
+  return role !== "member";
 }
 
 /**
@@ -866,12 +891,34 @@ export async function markayaHizmetEkle(input: {
   if (mevcut[0]) return { id: mevcut[0].id, yeni: false };
 
   const id = newId();
-  await db.insert(brandServices).values({
-    id,
-    brandId: input.brandId,
-    serviceId: input.serviceId,
-    createdById: input.aktorId,
-  });
+  try {
+    await db.insert(brandServices).values({
+      id,
+      brandId: input.brandId,
+      serviceId: input.serviceId,
+      createdById: input.aktorId,
+    });
+  } catch (e) {
+    /**
+     * ⚠ "Önce SELECT sonra INSERT" YARIŞA AÇIKTIR: iki eşzamanlı istek de
+     * "kayıt yok" görüp ikisi de yazmaya kalkar. Partial unique index bunu
+     * DB'de durdurur; burada ihlal 500'e değil "zaten ekli" yanıtına çevrilir.
+     * Kullanıcı açısından sonuç aynıdır: hizmet markada duruyor.
+     */
+    if (!benzersizlikIhlali(e, "uq_brand_service_live")) throw e;
+    const yaris = await db
+      .select({ id: brandServices.id })
+      .from(brandServices)
+      .where(
+        and(
+          eq(brandServices.brandId, input.brandId),
+          eq(brandServices.serviceId, input.serviceId),
+          isNull(brandServices.deletedAt),
+        ),
+      )
+      .limit(1);
+    return { id: yaris[0]?.id ?? id, yeni: false };
+  }
   return { id, yeni: true };
 }
 
@@ -1017,12 +1064,30 @@ export async function atamaEkle(input: {
   if (mevcut[0]) return { id: mevcut[0].id, yeni: false };
 
   const id = newId();
-  await db.insert(brandAssignments).values({
-    id,
-    brandId: input.brandId,
-    userId: input.userId,
-    createdById: input.aktorId,
-  });
+  try {
+    await db.insert(brandAssignments).values({
+      id,
+      brandId: input.brandId,
+      userId: input.userId,
+      createdById: input.aktorId,
+    });
+  } catch (e) {
+    // Hizmet ekleme ile aynı yarış: ikinci yazma index'te düşer, 500 değil
+    // "zaten atanmış" olur. Sonuç tektir — çift atama oluşmaz.
+    if (!benzersizlikIhlali(e, "uq_brand_assignment_live")) throw e;
+    const yaris = await db
+      .select({ id: brandAssignments.id })
+      .from(brandAssignments)
+      .where(
+        and(
+          eq(brandAssignments.brandId, input.brandId),
+          eq(brandAssignments.userId, input.userId),
+          isNull(brandAssignments.deletedAt),
+        ),
+      )
+      .limit(1);
+    return { id: yaris[0]?.id ?? id, yeni: false };
+  }
   return { id, yeni: true };
 }
 

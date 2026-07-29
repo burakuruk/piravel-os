@@ -9,6 +9,7 @@ import {
   markaAlanlariniSuz,
   markaCsvSutunlari,
   markaGuncellemeAlanlariniSuz,
+  markaHizmetBagiYonetebilirMi,
   markaModulunuGorebilirMi,
   markaSilebilirMi,
   markaYonetebilirMi,
@@ -83,15 +84,25 @@ describe("Rol kapıları", () => {
     }
   });
 
-  it("ekip ataması ve hizmet kataloğu SA/FIN'de", () => {
-    for (const r of ["super_admin", "finance"] as const) {
-      expect(atamaYonetebilirMi(r)).toBe(true);
-      expect(hizmetKatalogunuYonetebilirMi(r)).toBe(true);
-    }
-    for (const r of ["operations", "member"] as const) {
+  it("ekip ataması YALNIZ SA'da — atama bir yetki devridir", () => {
+    expect(atamaYonetebilirMi("super_admin")).toBe(true);
+    for (const r of ["finance", "operations", "member"] as const) {
       expect(atamaYonetebilirMi(r)).toBe(false);
+    }
+  });
+
+  it("hizmet kataloğu yazma YALNIZ SA'da — FIN salt okuma", () => {
+    expect(hizmetKatalogunuYonetebilirMi("super_admin")).toBe(true);
+    for (const r of ["finance", "operations", "member"] as const) {
       expect(hizmetKatalogunuYonetebilirMi(r)).toBe(false);
     }
+  });
+
+  it("markaya hizmet BAĞLAMA katalogdan ayrıdır — OPS de yapabilir", () => {
+    for (const r of ["super_admin", "finance", "operations"] as const) {
+      expect(markaHizmetBagiYonetebilirMi(r)).toBe(true);
+    }
+    expect(markaHizmetBagiYonetebilirMi("member")).toBe(false);
   });
 });
 
