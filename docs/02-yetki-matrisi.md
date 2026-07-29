@@ -45,8 +45,24 @@
 | brand_contacts · list/read | ✅ | ✅ | 🔷 | ❌ |
 | brand_contacts · create/update | ✅ | ✅ | 🔷 | ❌ |
 | brand_contacts · delete/restore | ✅ | ✅ | ❌ | ❌ |
-| brand_users · list | ✅ | ✅ | 🔷 (kendi atamaları) | ❌ |
-| brand_users · atama/kaldırma | ✅ | ✅ | ❌ | ❌ |
+| brand_assignments · list | ✅ | ✅ | 🔷 (kendi atamaları) | ❌ |
+| brand_assignments · atama/kaldırma | ✅ | ✅ | ❌ | ❌ |
+| brand_services · list | ✅ | ✅ | 🔷 | ❌ |
+| brand_services · ekleme/çıkarma | ✅ | ✅ | ❌ | ❌ |
+
+**Sprint 2'de kesinleşenler (0010 sonrası):**
+
+- OPS kapsamının kaynağı `brand_assignments`'tır; `brand_users` v3 müşteri
+  paneli kancasıdır ve yetki sınırı DEĞİLDİR.
+- Markaya **yalnız OPS atanabilir**. SA ve FIN aday aramasına hiç girmez (rol
+  gereği zaten tüm markaları görürler); MEM bu sprintte atanmaz. Marka
+  detayındaki "sorumlu ekip" de yalnız açıkça atanmış OPS'u listeler.
+- OPS yanıtından `tax_number` ve `tax_office` **çıkarılır** — liste, detay,
+  arama, filtre ve CSV dahil. OPS güncelleme gövdesinde bu alanlar
+  yok sayılır.
+- `brands.code` oluşturulduktan sonra **değiştirilemez** (uygulama + DB
+  trigger). Marka ve hizmet kodları trim + uppercase normalize edilir,
+  benzersizlik büyük/küçük harf duyarsızdır.
 
 ### 3.2 Hizmet ve sözleşme
 
@@ -120,7 +136,7 @@
 
 | Rol | Kural | Uygulama |
 |---|---|---|
-| OPS | Yalnızca `brand_users` tablosunda atandığı markaların kayıtlarını görür (brands, contacts, contracts-kapsam, tasks, attachments) | Her sorguya zorunlu `WHERE brand_id IN (SELECT brand_id FROM brand_users WHERE user_id = :me)` — ortak bir `scopeToBrands()` yardımcı fonksiyonuyla, elle değil |
+| OPS | Yalnızca `brand_assignments` tablosunda atandığı markaların kayıtlarını görür (brands, contacts, brand_services, contracts-kapsam, tasks, attachments) | Her sorguya zorunlu `WHERE brand_id IN (SELECT brand_id FROM brand_assignments WHERE user_id = :me AND deleted_at IS NULL)` — tek kaynak `markaKapsamKosulu()` (`src/lib/brand-admin.ts`), elle değil |
 | MEM | Yalnızca `assignee_id = kendisi` olan tasks + bu task'ların ekleri | `WHERE assignee_id = :me` |
 | FIN | Marka kapsaması yok (tüm finans), ama kullanıcı/ayar yönetimi yok | — |
 | SA | Kapsamsız | — |

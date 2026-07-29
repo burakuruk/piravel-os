@@ -159,6 +159,63 @@ export const brandUsers = pgTable(
   ],
 );
 
+/**
+ * brand_assignments — İÇ EKİP ataması, OPS kapsamının TEK kaynağı (0010).
+ *
+ * ⚠ Yukarıdaki `brand_users` ile karıştırılmamalı: o tablo v3 müşteri paneli
+ * kancasıdır (marka TARAFINDAKİ kullanıcı) ve soft delete'i yoktur. Yetki
+ * sınırı bu tablodur.
+ *
+ * Bağımsız UUID id + soft delete: atama kaldırılıp yeniden verilebilmeli ve
+ * "bu kullanıcı o tarihte bu markayı görebiliyor muydu" sorusu denetimde
+ * cevaplanabilmeli. Benzersizlik bu yüzden yalnız canlı kayıtlar için geçerli.
+ *
+ * FK'ler RESTRICT (0010): marka veya kullanıcı fiziksel silinemez.
+ */
+export const brandAssignments = pgTable(
+  "brand_assignments",
+  {
+    id: idCol(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "restrict" }),
+    userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+    notes: text("notes"),
+    ...auditCols,
+  },
+  (t) => [
+    uniqueIndex("uq_brand_assignment_live")
+      .on(t.brandId, t.userId)
+      .where(sql`${t.deletedAt} IS NULL`),
+    index("idx_brand_assignments_user").on(t.userId).where(sql`${t.deletedAt} IS NULL`),
+    index("idx_brand_assignments_brand").on(t.brandId).where(sql`${t.deletedAt} IS NULL`),
+  ],
+);
+
+/**
+ * brand_services — markanın aldığı hizmetler (0010).
+ *
+ * Bağımsız UUID id ve soft delete: hizmet markadan çıkarılıp sonra yeniden
+ * eklenebilmeli. FK'ler RESTRICT — bu tablo "bu marka şu hizmeti alıyordu"
+ * bilgisinin tek kaydı; CASCADE geçmişi sessizce silerdi.
+ */
+export const brandServices = pgTable(
+  "brand_services",
+  {
+    id: idCol(),
+    brandId: uuid("brand_id").notNull().references(() => brands.id, { onDelete: "restrict" }),
+    serviceId: uuid("service_id").notNull().references(() => services.id, { onDelete: "restrict" }),
+    notes: text("notes"),
+    ...auditCols,
+  },
+  (t) => [
+    uniqueIndex("uq_brand_service_live")
+      .on(t.brandId, t.serviceId)
+      .where(sql`${t.deletedAt} IS NULL`),
+    index("idx_brand_services_brand").on(t.brandId).where(sql`${t.deletedAt} IS NULL`),
+    index("idx_brand_services_service").on(t.serviceId).where(sql`${t.deletedAt} IS NULL`),
+  ],
+);
+
 // ── 6.1 services ──
 export const services = pgTable(
   "services",

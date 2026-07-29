@@ -16,6 +16,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "seed:admin": "tsx scripts/seed-admin.ts",
     "verify:auth": "node scripts/verify-auth-flow.mjs",
+    "verify:brands": "node scripts/verify-brands.mjs",
     "verify:lockout": "node scripts/verify-lockout.mjs",
     "verify:stepup": "node scripts/verify-stepup.mjs",
     "verify:users": "node scripts/verify-users.mjs",

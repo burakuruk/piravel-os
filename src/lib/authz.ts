@@ -1,7 +1,7 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 import { db } from "@/db";
-import { brandUsers, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { auth } from "@/lib/auth";
 import { isTwoFactorRequired, type UserRole } from "@/lib/auth-policy";
 
@@ -97,33 +97,13 @@ export async function requireRole(...allowed: UserRole[]): Promise<CurrentUser> 
 }
 
 /**
- * Kullanıcının erişebildiği marka id'leri.
- * SA/FIN: null döner (kapsam yok, tümü).
- * OPS   : brand_users ataması.
- * MEM   : boş dizi (marka listesine erişimi yok).
+ * MARKA KAPSAMI BURADA DEĞİL.
+ *
+ * OPS'un hangi markaları gördüğü `@/lib/brand-admin` içindeki
+ * `markaKapsamKosulu()` ile belirlenir ve kaynağı `brand_assignments`
+ * tablosudur (migration 0010). Koşul SQL olarak üretilir ve her sorguya WHERE
+ * diye girer; "önce çek sonra süz" yapılmaz.
+ *
+ * Buraya ikinci bir kapsam yardımcısı eklenmemeli: aynı kural iki yerde
+ * yazıldığında biri güncellenir, diğeri unutulur ve yetki sessizce delinir.
  */
-export async function accessibleBrandIds(user: CurrentUser): Promise<string[] | null> {
-  if (user.role === "super_admin" || user.role === "finance") return null;
-  if (user.role === "member") return [];
-  const rows = await db
-    .select({ brandId: brandUsers.brandId })
-    .from(brandUsers)
-    .where(eq(brandUsers.userId, user.id));
-  return rows.map((r) => r.brandId);
-}
-
-/** Bir markaya erişim kontrolü; kapsam dışıysa 404 gibi davranılır (varlık sızdırılmaz). */
-export async function canAccessBrand(user: CurrentUser, brandId: string): Promise<boolean> {
-  const ids = await accessibleBrandIds(user);
-  if (ids === null) return true;
-  return ids.includes(brandId);
-}
-
-/** Marka kapsamlı sorgular için WHERE parçası. null → filtre gerekmiyor. */
-export function brandScopeFilter(
-  brandIds: string[] | null,
-  column: Parameters<typeof inArray>[0],
-) {
-  if (brandIds === null) return undefined;
-  return inArray(column, brandIds.length > 0 ? brandIds : ["00000000-0000-0000-0000-000000000000"]);
-}

@@ -71,6 +71,13 @@
       "when": 1785150900000,
       "tag": "0009_user_invitations_and_pending_users",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785664800000,
+      "tag": "0010_brand_module",
+      "breakpoints": true
     }
   ]
 }

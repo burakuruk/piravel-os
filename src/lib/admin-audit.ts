@@ -14,13 +14,21 @@ import type { RequestContext } from "@/lib/request-context";
  * TOTP sırrı buraya ASLA girmez — girse bile maskelenir.
  */
 
-export type YonetimEylemi = "create" | "update" | "delete";
+export type YonetimEylemi = "create" | "update" | "delete" | "export";
 
 export interface YonetimAuditGirdisi {
   eylem: YonetimEylemi;
   /** Kimliği bilinmeyen istekler için null — uydurma bir aktör yazılmaz. */
   aktor: { id: string; email: string } | null;
-  varlikTuru: "user" | "user_invitation" | "user_session";
+  varlikTuru:
+    | "user"
+    | "user_invitation"
+    | "user_session"
+    | "brand"
+    | "brand_contact"
+    | "brand_service"
+    | "brand_assignment"
+    | "service";
   varlikId?: string | null;
   etiket: string;
   degisiklikler?: Record<string, unknown>;

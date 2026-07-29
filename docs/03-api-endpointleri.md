@@ -82,8 +82,20 @@ Better Auth kendi uçlarını `/api/auth/*` altında sunar. **Bu uçlar bizim AP
 | POST | `/api/v1/brands/:id/contacts` | Yetkili ekle | SA, FIN, OPS🔷 |
 | PATCH | `/api/v1/contacts/:id` | Yetkili güncelle | SA, FIN, OPS🔷 |
 | DELETE | `/api/v1/contacts/:id` | Soft delete | SA, FIN |
-| GET | `/api/v1/brands/:id/users` | Marka atamaları | SA, FIN, OPS🔷 |
-| PUT | `/api/v1/brands/:id/users` | Atama listesini güncelle | SA, FIN |
+| GET | `/api/v1/brands/:id/assignments` | Sorumlu ekip (yalnız atanmış OPS) | SA, FIN, OPS🔷 |
+| POST | `/api/v1/brands/:id/assignments` | Kullanıcı ata (gövde: `userId`) | SA, FIN |
+| DELETE | `/api/v1/brands/:id/assignments` | Atamayı kaldır (soft delete) | SA, FIN |
+| GET | `/api/v1/brands/:id/assignments/candidates` | Atanabilir kullanıcılar (`q=`) — **yalnız aktif OPS** | SA, FIN |
+| GET | `/api/v1/brands/:id/services` | Markanın aldığı hizmetler | SA, FIN, OPS🔷💰 |
+| POST | `/api/v1/brands/:id/services` | Hizmet ekle (gövde: `serviceId`) | SA, FIN |
+| DELETE | `/api/v1/brands/:id/services` | Hizmeti çıkar (soft delete) | SA, FIN |
+| GET | `/api/v1/brands/export` | Filtreli CSV — audit `export`; OPS kapsam + vergi sütunları çıkarılmış | SA, FIN, OPS🔷 |
+
+> **Sprint 2 notu.** Atama ucu `:id/users` değil `:id/assignments`'tır ve
+> `brand_assignments` tablosuna yazar (0010). `PUT` ile liste değiştirme yerine
+> tek tek `POST`/`DELETE` kullanılır: her atama ayrı bir yetki olayıdır ve
+> denetim izinde tek tek görünmelidir. `DELETE /api/v1/services/:id` **yoktur**
+> — hizmet silinmez, `PATCH … {isActive:false}` ile pasifleştirilir.
 
 ### 3.2 Hizmetler ve sözleşmeler
 

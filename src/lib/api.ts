@@ -1,4 +1,12 @@
 import { headers as gelenBasliklar } from "next/headers";
+import {
+  atamaYonetebilirMi,
+  hizmetKatalogunuYonetebilirMi,
+  MarkaKuralHatasi,
+  markaModulunuGorebilirMi,
+  markayaErisebilirMi,
+  markaYonetebilirMi,
+} from "@/lib/brand-admin";
 import { getCurrentUser, type CurrentUser } from "@/lib/authz";
 import { requireStepUp, StepUpGerekli, type KritikIslem } from "@/lib/step-up";
 import { IsKuraliHatasi, kullaniciListesiniGorebilirMi, kullaniciYonetebilirMi } from "@/lib/user-admin";
@@ -50,6 +58,61 @@ export async function yonetenKullanici(): Promise<CurrentUser> {
   const user = await oturumluKullanici();
   if (!kullaniciYonetebilirMi(user.role)) throw new RotaHatasi(YOK());
   return user;
+}
+
+/**
+ * Marka modülünü OKUYABİLEN roller (SA/FIN/OPS). MEM → 404.
+ *
+ * MEM için ucun VARLIĞI da gizlenir: 403 dönmek "böyle bir uç var ama sana
+ * kapalı" bilgisini sızdırırdı.
+ */
+export async function markaOkuyabilenKullanici(): Promise<CurrentUser> {
+  const user = await oturumluKullanici();
+  if (!markaModulunuGorebilirMi(user.role)) throw new RotaHatasi(YOK());
+  return user;
+}
+
+/**
+ * Marka oluşturma/düzenleme (SA/FIN).
+ *
+ * OPS 403 alır, 404 değil: modülü zaten görüyor, ucun varlığı sır değil.
+ * MEM yine 404 görür.
+ */
+export async function markaYonetenKullanici(): Promise<CurrentUser> {
+  const user = await markaOkuyabilenKullanici();
+  if (!markaYonetebilirMi(user.role)) {
+    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
+  }
+  return user;
+}
+
+/** Ekip ataması (SA/FIN). */
+export async function atamaYonetenKullanici(): Promise<CurrentUser> {
+  const user = await markaOkuyabilenKullanici();
+  if (!atamaYonetebilirMi(user.role)) {
+    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
+  }
+  return user;
+}
+
+/** Hizmet kataloğu yönetimi (SA/FIN). */
+export async function hizmetYonetenKullanici(): Promise<CurrentUser> {
+  const user = await markaOkuyabilenKullanici();
+  if (!hizmetKatalogunuYonetebilirMi(user.role)) {
+    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
+  }
+  return user;
+}
+
+/**
+ * Marka kapsam kapısı — kapsam dışı marka YOK gibi davranır.
+ *
+ * ⚠ 403 dönmek OPS'a hangi markaların VAR OLDUĞUNU söylerdi; atanmadığı bir
+ * markanın kimliğini deneyen biri "var ama yasak" ile "hiç yok" arasındaki
+ * farkı ölçerek müşteri listesini çıkarabilirdi.
+ */
+export async function erisilebilirMarka(user: CurrentUser, brandId: string): Promise<void> {
+  if (!(await markayaErisebilirMi(user, brandId))) throw new RotaHatasi(YOK());
 }
 
 /** Kritik işlem kapısı — yükseltme yoksa 403 SESSION_STALE. */
@@ -168,10 +231,39 @@ export async function govdeOku<T = Record<string, unknown>>(request: Request): P
 
 /** İş kuralı hatalarını tutarlı HTTP koduna çevirir. */
 export function isKuraliYaniti(e: unknown): Response | null {
-  if (!(e instanceof IsKuraliHatasi)) return null;
-  const durum =
-    e.code === "USER_NOT_FOUND" ? 404 : e.code === "EMAIL_TAKEN" ? 409 : 400;
-  return hataYanit(e.code, e.message, durum);
+  if (e instanceof IsKuraliHatasi) {
+    const durum =
+      e.code === "USER_NOT_FOUND" ? 404 : e.code === "EMAIL_TAKEN" ? 409 : 400;
+    return hataYanit(e.code, e.message, durum);
+  }
+  if (e instanceof MarkaKuralHatasi) return hataYanit(e.code, e.message, markaDurumu(e.code));
+  return null;
+}
+
+/**
+ * Marka iş kuralı → HTTP.
+ *
+ * 409: eşzamanlı/çakışan durum (kod alınmış). 422: istek biçimsel olarak
+ * doğru ama iş kuralı reddediyor (pasif hizmet atanamaz, kod değiştirilemez,
+ * kullanıcı atanabilir değil) — istemcinin gövdeyi düzelterek tekrar
+ * denemesi anlamsızdır. 400: gövde hatalı.
+ */
+function markaDurumu(code: MarkaKuralHatasi["code"]): number {
+  switch (code) {
+    case "BRAND_NOT_FOUND":
+    case "SERVICE_NOT_FOUND":
+    case "CONTACT_NOT_FOUND":
+      return 404;
+    case "BRAND_CODE_TAKEN":
+    case "SERVICE_CODE_TAKEN":
+      return 409;
+    case "BRAND_CODE_IMMUTABLE":
+    case "SERVICE_INACTIVE":
+    case "USER_NOT_ASSIGNABLE":
+      return 422;
+    default:
+      return 400;
+  }
 }
 
 /** Rota gövdesini saran ortak hata dönüşümü. */
