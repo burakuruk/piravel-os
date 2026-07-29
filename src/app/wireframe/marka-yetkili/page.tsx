@@ -46,9 +46,9 @@ export default function MarkaYetkiliWireframe() {
         </div>
 
         <div className="rounded-sm bg-warning-bg px-3 py-2 text-xs text-warning">
-          <strong>Karar notu:</strong> Yetkili bir sistem kullanıcısı DEĞİLDİR —
-          Piravel OS&apos;a giriş yapamaz, davet almaz. Yalnız marka tarafındaki
-          iletişim kaydıdır. Sisteme erişecek kişiler{" "}
+          Marka yetkilisi bir sistem kullanıcısı değildir: Piravel OS&apos;a giriş
+          yapamaz, davet almaz. Yalnız marka tarafındaki iletişim kaydıdır.
+          Sisteme erişecek kişiler{" "}
           <span className="underline">Kullanıcılar</span> modülünden davet edilir.
         </div>
 

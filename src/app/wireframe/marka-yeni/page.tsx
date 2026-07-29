@@ -51,8 +51,8 @@ export default function MarkaYeniWireframe() {
         </div>
 
         <p className="rounded-sm bg-info-bg px-3 py-2 text-xs text-info">
-          Karar notu: kod benzersizdir ve sonradan değiştirilemez — sözleşme ve
-          fatura numaraları ona dayanacak.
+          Marka kodu benzersizdir ve oluşturulduktan sonra değiştirilemez;
+          sözleşme ve fatura numaraları bu koda dayanır.
         </p>
       </div>
     </AppWire>

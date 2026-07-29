@@ -57,6 +57,23 @@ export function Dugme({
   );
 }
 
+/**
+ * SALT OKUNUR bilgi satırı — düz metin, kutu YOK.
+ *
+ * Detay ekranında değerler input gibi görünmez: çerçeveli bir kutu kullanıcıya
+ * "buraya yazabilirim" der ve tıklayınca hiçbir şey olmaz. Girdi, seçim ve
+ * form alanları yalnız "Düzenle" modunda çıkar. `Alan` (kutulu) bu yüzden
+ * yalnız form ekranlarında kullanılır.
+ */
+export function Bilgi({ etiket, deger, genis }: { etiket: string; deger?: string; genis?: boolean }) {
+  return (
+    <div className={genis ? "sm:col-span-2" : ""}>
+      <dt className="text-xs text-ink-400">{etiket}</dt>
+      <dd className="mt-0.5 text-sm text-ink-900">{deger ?? "—"}</dd>
+    </div>
+  );
+}
+
 export function Alan({ etiket, deger, genis }: { etiket: string; deger?: string; genis?: boolean }) {
   return (
     <div className={genis ? "col-span-2" : ""}>
@@ -144,13 +161,19 @@ export function AppWire({
         </div>
 
         <main className="mx-auto w-full max-w-[1320px] flex-1 px-6 py-6 lg:px-8">
-          <div className="mb-6 flex items-start justify-between gap-4">
+          {/*
+            Mobilde başlık ve işlem butonları AYNI SATIRA sıkıştırılmaz: başlık
+            üstte tam genişlikte, butonlar altında ayrı satırda. 375 px'te
+            "Sahte Vize A.Ş." + Düzenle + Pasifleştir yan yana sığmıyor ve
+            başlık kırpılıyordu.
+          */}
+          <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
             <div>
               <h1 className="font-display text-2xl font-semibold text-ink-900">{baslik}</h1>
               <div className="mt-1 h-0.5 w-10 bg-gold-500" />
               {aciklama && <p className="mt-2 max-w-[68ch] text-sm text-ink-400">{aciklama}</p>}
             </div>
-            {ustEylem}
+            {ustEylem && <div className="flex flex-wrap gap-2">{ustEylem}</div>}
           </div>
           {children}
         </main>

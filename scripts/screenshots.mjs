@@ -72,15 +72,17 @@ const shots = [
   // Oturum gerektirmez: /wireframe public prefix'te.
   { file: "60-w-marka-listesi-1440x900.png", path: "/wireframe/marka-listesi", w: 1440, h: 900 },
   { file: "61-w-marka-yeni-1440x1100.png", path: "/wireframe/marka-yeni", w: 1440, h: 1100 },
-  { file: "62-w-marka-detay-1440x1200.png", path: "/wireframe/marka-detay", w: 1440, h: 1200 },
+  { file: "62-w-marka-detay-1440x1000.png", path: "/wireframe/marka-detay", w: 1440, h: 1000 },
   { file: "63-w-marka-yetkili-1440x1100.png", path: "/wireframe/marka-yetkili", w: 1440, h: 1100 },
   { file: "64-w-hizmet-katalogu-1440x900.png", path: "/wireframe/hizmet-katalogu", w: 1440, h: 900 },
-  { file: "65-w-marka-ekip-atama-1440x1000.png", path: "/wireframe/marka-ekip-atama", w: 1440, h: 1000 },
-  { file: "70-w-marka-listesi-mobil-375x900.png", path: "/wireframe/marka-listesi", w: 375, h: 900 },
+  { file: "65-w-marka-ekip-atama-1440x850.png", path: "/wireframe/marka-ekip-atama", w: 1440, h: 850 },
+  // Mobil kareler kart düzenine geçtiği için daha uzun; kesilmesin diye
+  // viewport yükseklikleri içerikten büyük tutuldu.
+  { file: "70-w-marka-listesi-mobil-375x1350.png", path: "/wireframe/marka-listesi", w: 375, h: 1350 },
   { file: "71-w-marka-yeni-mobil-375x1100.png", path: "/wireframe/marka-yeni", w: 375, h: 1100 },
-  { file: "72-w-marka-detay-mobil-375x1400.png", path: "/wireframe/marka-detay", w: 375, h: 1400 },
+  { file: "72-w-marka-detay-mobil-375x1750.png", path: "/wireframe/marka-detay", w: 375, h: 1750 },
   { file: "73-w-marka-yetkili-mobil-375x1100.png", path: "/wireframe/marka-yetkili", w: 375, h: 1100 },
-  { file: "74-w-hizmet-katalogu-mobil-375x1100.png", path: "/wireframe/hizmet-katalogu", w: 375, h: 1100 },
+  { file: "74-w-hizmet-katalogu-mobil-375x950.png", path: "/wireframe/hizmet-katalogu", w: 375, h: 950 },
   { file: "75-w-marka-ekip-atama-mobil-375x1100.png", path: "/wireframe/marka-ekip-atama", w: 375, h: 1100 },
 
   // ── Sprint 1: GERÇEK ekranlar (wireframe değil) ──

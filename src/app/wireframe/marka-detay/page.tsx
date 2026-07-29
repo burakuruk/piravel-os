@@ -4,12 +4,16 @@
  * Tartışmaya açılan kararlar:
  *   · Tek sayfa, bölümler hâlinde — sekme yok. Sekmeler bilgiyi saklar ve
  *     "bu markanın yetkilisi var mı" sorusu bir tık uzağa düşer
- *   · Sözleşme/finans bölümleri BU SPRINTTE YOK; yerleri sonraki sprintler
- *     için işaretlendi ki düzen sonradan bozulmasın
+ *   · Sözleşme/finans BU SPRINTTE YOK ve ekranda da GÖSTERİLMEZ: olmayan bir
+ *     şeyin yer tutucusu kullanıcıya "burada bir şey eksik" hissi verir
  *   · Yetkili, hizmet ve ekip bölümleri kendi kartlarında ve her biri
  *     detay sayfasından yönetilir
+ *   · "Sorumlu ekip" yalnız AÇIKÇA ATANMIŞ OPS kullanıcılarını gösterir;
+ *     SA/FIN rol gereği zaten görür, atanmış gibi listelenmezler
+ *   · "Son değişiklikler": son üç denetim olayı. Tam denetim ekranı bu
+ *     sprintte yok; ama "bu markayı en son kim değiştirdi" sorusu hemen burada
  */
-import { Alan, AppWire, Dugme, Kart, Rozet } from "../_app-shell";
+import { AppWire, Bilgi, Dugme, Kart, Rozet } from "../_app-shell";
 
 export default function MarkaDetayWireframe() {
   return (
@@ -17,10 +21,10 @@ export default function MarkaDetayWireframe() {
       baslik="Sahte Vize A.Ş."
       aciklama="SVZ · Danışmanlık"
       ustEylem={
-        <div className="flex gap-2">
+        <>
           <Dugme>Düzenle</Dugme>
           <Dugme tur="yikici">Pasifleştir</Dugme>
-        </div>
+        </>
       }
     >
       <div className="mb-4 flex items-center gap-2">
@@ -31,15 +35,16 @@ export default function MarkaDetayWireframe() {
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Kart baslik="Kimlik ve iletişim" eylem={<span className="text-sm text-navy-500 underline">Düzenle</span>}>
-            <div className="grid grid-cols-2 gap-4">
-              <Alan etiket="Marka kodu" deger="SVZ" />
-              <Alan etiket="Sektör" deger="Danışmanlık" />
-              <Alan etiket="Ünvan" deger="Sahte Vize Danışmanlık Ltd. Şti." genis />
-              <Alan etiket="E-posta" deger="info@example.com" />
-              <Alan etiket="Telefon" deger="+90 ••• ••• ••••" />
-              <Alan etiket="Vergi no" deger="•••••••••" />
-              <Alan etiket="Vergi dairesi" deger="Örnek VD" />
-            </div>
+            {/* Salt okunur: düz metin. Input/select yalnız "Düzenle" modunda. */}
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+              <Bilgi etiket="Marka kodu" deger="SVZ" />
+              <Bilgi etiket="Sektör" deger="Danışmanlık" />
+              <Bilgi etiket="Ünvan" deger="Sahte Vize Danışmanlık Ltd. Şti." genis />
+              <Bilgi etiket="E-posta" deger="info@example.com" />
+              <Bilgi etiket="Telefon" deger="+90 ••• ••• ••••" />
+              <Bilgi etiket="Vergi no" deger="•••••••••" />
+              <Bilgi etiket="Vergi dairesi" deger="Örnek VD" />
+            </dl>
           </Kart>
 
           <Kart
@@ -87,10 +92,11 @@ export default function MarkaDetayWireframe() {
             baslik="Sorumlu ekip"
             eylem={<span className="text-sm text-navy-500 underline">Ata</span>}
           >
+            {/* Yalnız açıkça atanmış OPS kullanıcıları; FIN burada listelenmez. */}
             <div className="space-y-2 text-sm">
               {[
-                ["Test operations", "Operasyon"],
-                ["Test finance", "Finans"],
+                ["Sahte Operasyon", "Operasyon"],
+                ["Örnek Operasyon", "Operasyon"],
               ].map(([ad, rol]) => (
                 <div key={ad} className="flex items-center justify-between">
                   <div>
@@ -103,20 +109,29 @@ export default function MarkaDetayWireframe() {
             </div>
           </Kart>
 
+          <Kart
+            baslik="Son değişiklikler"
+            eylem={<span className="text-sm text-ink-400">Son 3 kayıt</span>}
+          >
+            <ol className="space-y-3 text-sm">
+              {[
+                ["Hizmet eklendi: SEO", "Sahte Yönetici", "28.07.2026 14:32"],
+                ["Yetkili güncellendi", "Sahte Operasyon", "27.07.2026 09:11"],
+                ["Marka oluşturuldu", "Sahte Yönetici", "12.03.2026 16:05"],
+              ].map(([islem, kisi, tarih]) => (
+                <li key={tarih}>
+                  <div className="text-ink-900">{islem}</div>
+                  <div className="text-xs text-ink-400">
+                    {kisi} · {tarih}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </Kart>
+
           <Kart baslik="Notlar">
             <p className="text-sm text-ink-400">Henüz not yok.</p>
           </Kart>
-
-          {/* Sonraki sprintlerin yeri — şimdiden işaretli */}
-          <div className="rounded-md border border-dashed border-line-300 bg-fill-100 p-5">
-            <p className="text-xs tracking-widest text-ink-400">SONRAKİ SPRINTLER</p>
-            <p className="mt-2 text-sm text-ink-400">
-              Sözleşmeler · Alacaklar · Tahsilat geçmişi
-            </p>
-            <p className="mt-2 text-xs text-ink-400">
-              Bu sprintte geliştirilmiyor; yeri düzen bozulmasın diye ayrıldı.
-            </p>
-          </div>
         </div>
       </div>
     </AppWire>

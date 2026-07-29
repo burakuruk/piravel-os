@@ -6,8 +6,10 @@
  *     görür. Bu yüzden ekran "kime hangi markayı veriyorum" sorusunu net
  *     sormalı ve sonucu hemen göstermeli
  *   · Atama kaldırıldığında o kullanıcı markayı ANINDA göremez — uyarı verilir
- *   · SA ve FIN atamadan bağımsız olarak tüm markaları görür; listede bu
- *     açıkça yazılır, yoksa "neden onu atayamıyorum" sorusu çıkar
+ *   · YALNIZ OPS ATANABİLİR. SA ve FIN arama sonuçlarına hiç girmez: rol
+ *     gereği zaten tüm markaları görürler, atamak bir şeyi değiştirmez ve
+ *     "atanmış" görünmeleri yetki tablosunu yanıltır. MEM bu sprintte
+ *     markaya atanmaz — marka modülüne hiç erişemiyor
  *   · Pasif kullanıcılar listede görünmez
  */
 import { AppWire, Dugme, Kart, Rozet } from "../_app-shell";
@@ -22,29 +24,27 @@ export default function MarkaEkipAtamaWireframe() {
         <Kart baslik="Atanmış kullanıcılar">
           <div className="divide-y divide-line-200 text-sm">
             {[
-              ["Test operations", "Operasyon", "Yalnız atandığı markaları görür", true],
-              ["Test finance", "Finans", "Tüm markaları görür (rol gereği)", false],
-            ].map(([ad, rol, not, kaldirilabilir]) => (
-              <div key={String(ad)} className="flex items-center justify-between py-3">
-                <div>
+              ["Sahte Operasyon", "sahte-ops@example.com", "12.03.2026 tarihinde atandı"],
+              ["Örnek Operasyon", "ornek-ops@example.com", "02.07.2026 tarihinde atandı"],
+            ].map(([ad, mail, not]) => (
+              <div key={mail} className="flex items-center justify-between gap-3 py-3">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-ink-900">{String(ad)}</span>
-                    <Rozet ton={rol === "Finans" ? "info" : "success"}>{String(rol)}</Rozet>
+                    <span className="text-ink-900">{ad}</span>
+                    <Rozet ton="success">Operasyon</Rozet>
                   </div>
-                  <div className="text-xs text-ink-400">{String(not)}</div>
+                  <div className="truncate text-xs text-ink-400">
+                    {mail} · {not}
+                  </div>
                 </div>
-                {kaldirilabilir ? (
-                  <span className="text-sm text-danger underline">Kaldır</span>
-                ) : (
-                  <span className="text-xs text-ink-400">Atama gerekmez</span>
-                )}
+                <span className="shrink-0 text-sm text-danger underline">Kaldır</span>
               </div>
             ))}
           </div>
         </Kart>
 
-        <Kart baslik="Kullanıcı ata">
-          <div className="flex items-end gap-2">
+        <Kart baslik="Operasyon kullanıcısı ata">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <div className="flex-1">
               <div className="mb-1 text-sm text-ink-600">Kullanıcı</div>
               <div className="flex h-9 items-center rounded-sm border border-line-300 px-3 text-sm text-ink-400">
@@ -53,25 +53,26 @@ export default function MarkaEkipAtamaWireframe() {
             </div>
             <Dugme tur="birincil">Ata</Dugme>
           </div>
+          <p className="mt-2 text-xs text-ink-400">
+            Aramada yalnız operasyon rolündeki aktif kullanıcılar çıkar. Yönetici ve
+            finans rolleri tüm markaları rolleri gereği zaten görür; atanmaları
+            gerekmez.
+          </p>
 
+          {/* Arama sonucu: yalnız OPS. SA/FIN/MEM sonuçlara hiç girmez. */}
           <div className="mt-3 rounded-sm border border-line-200 bg-fill-100 p-3 text-sm">
             <div className="mb-2 text-xs tracking-widest text-ink-400">ARAMA SONUCU</div>
             <div className="space-y-2">
               {[
-                ["Sahte Operasyon", "operations · sahte-ops@example.com", true],
-                ["Örnek Üye", "member · ornek@example.com", true],
-                ["Test Yonetici", "super_admin · admin@example.com", false],
-              ].map(([ad, meta, atanabilir]) => (
-                <div key={String(ad)} className="flex items-center justify-between">
-                  <div>
-                    <div className="text-ink-900">{String(ad)}</div>
-                    <div className="text-xs text-ink-400">{String(meta)}</div>
+                ["Deneme Operasyon", "sahte-ops2@example.com"],
+                ["Test Operasyon", "test-ops@example.com"],
+              ].map(([ad, mail]) => (
+                <div key={mail} className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-ink-900">{ad}</div>
+                    <div className="truncate text-xs text-ink-400">operations · {mail}</div>
                   </div>
-                  {atanabilir ? (
-                    <span className="text-xs text-navy-500 underline">Seç</span>
-                  ) : (
-                    <span className="text-xs text-ink-400">Zaten tüm markaları görür</span>
-                  )}
+                  <span className="shrink-0 text-xs text-navy-500 underline">Seç</span>
                 </div>
               ))}
             </div>
@@ -79,10 +80,8 @@ export default function MarkaEkipAtamaWireframe() {
         </Kart>
 
         <div className="rounded-sm bg-warning-bg px-3 py-2 text-xs text-warning">
-          <strong>Karar notu:</strong> Atama bir yetki sınırıdır. Kaldırıldığı anda
-          OPS kullanıcısı bu markayı ve ona bağlı kayıtları göremez; açık
-          sekmesinde de bir sonraki istekte erişimi kesilir. Kaldırma işlemi onay
-          penceresi ister.
+          Atamayı kaldırdığınızda bu kullanıcı markayı ve ona bağlı kayıtları
+          anında göremez. İşlem onay ister.
         </div>
       </div>
     </AppWire>

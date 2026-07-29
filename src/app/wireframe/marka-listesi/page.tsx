@@ -7,6 +7,12 @@
  *   · CSV dışa aktarma listenin O ANKİ filtresini dışa aktarır
  *   · Yetkili ve hizmet sayısı listede: "hangi marka boşta" sorusu için
  *   · OPS yalnız ATANDIĞI markaları görür (API katmanında zorlanır)
+ *   · MOBİLDE tablo değil KART düzeni: 375 px'te sekiz sütunlu tablo ya yatay
+ *     kayar ya da sütun gizler; ikisi de bilgi kaybı. Kartta listedeki her
+ *     alan (kod, ad, durum, sektör, birincil yetkili, hizmet, ekip) durur.
+ *   · Kartın tamamı TEK bir <a>: chevron + ayrı "Detay" bağlantısı aynı işi
+ *     iki kez yapıyordu. Gerçek bağlantı kullanılır ki klavye ve ekran
+ *     okuyucu çalışsın; salt `onClick` erişilebilir değildir.
  */
 import { AppWire, Dugme, Rozet, SAHTE_MARKALAR } from "../_app-shell";
 
@@ -31,8 +37,55 @@ export default function MarkaListesiWireframe() {
         <Dugme>CSV indir</Dugme>
       </div>
 
-      <div className="overflow-x-auto rounded-md border border-line-200 bg-surface">
-        <table className="w-full min-w-[760px] text-sm">
+      {/* ── Mobil: kart listesi (lg altında) ── */}
+      <div className="space-y-3 lg:hidden">
+        {SAHTE_MARKALAR.map((m) => (
+          /*
+            Kartın TAMAMI tek bir bağlantıdır: chevron ile ayrı bir "Detay"
+            bağlantısı aynı işi iki kez yapıyordu. Gerçek <a> kullanılır —
+            yalnız onClick klavyeyle ve ekran okuyucuyla erişilemez olurdu.
+          */
+          <a
+            key={m.kod}
+            href={`/markalar/${m.kod}`}
+            className="block rounded-md border border-line-200 bg-surface p-4"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-mono text-xs text-ink-400">{m.kod}</div>
+                <div className="mt-0.5 truncate text-[15px] font-medium text-ink-900">{m.ad}</div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Rozet ton={m.ton}>{m.durum}</Rozet>
+                <span className="text-lg leading-none text-ink-400">›</span>
+              </div>
+            </div>
+
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
+              <div className="col-span-2">
+                <dt className="text-xs text-ink-400">Sektör</dt>
+                <dd className="text-ink-600">{m.sektor}</dd>
+              </div>
+              <div className="col-span-2">
+                <dt className="text-xs text-ink-400">Birincil yetkili</dt>
+                <dd className="text-ink-600">{m.yetkili}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-ink-400">Hizmet</dt>
+                <dd className="tabular-nums text-ink-600">{m.hizmet}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-ink-400">Atanan ekip</dt>
+                <dd className="tabular-nums text-ink-600">{m.ekip}</dd>
+              </div>
+            </dl>
+          </a>
+        ))}
+      </div>
+
+      {/* ── Masaüstü: tablo (md ve üstü) ── */}
+      <div className="hidden rounded-md border border-line-200 bg-surface lg:block">
+        <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-line-200 text-left text-xs tracking-wide text-ink-400">
               <th className="px-4 py-3 font-medium">KOD</th>
@@ -70,11 +123,6 @@ export default function MarkaListesiWireframe() {
         <span>4 marka · filtre uygulanmadı</span>
         <span>Sayfa 1 / 1</span>
       </div>
-
-      <p className="mt-6 rounded-sm bg-info-bg px-3 py-2 text-xs text-info">
-        Karar notu: OPS rolü bu listede yalnız <strong>atandığı</strong> markaları
-        görür; süzme UI&apos;da değil sorgu katmanında yapılır.
-      </p>
     </AppWire>
   );
 }
