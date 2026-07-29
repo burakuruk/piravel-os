@@ -577,8 +577,10 @@ let hizmetPasif;
    * SA'nın 4. bölümde aldığı yükseltme burada bilerek DÜŞÜRÜLÜR: pasifleştirme
    * kapısının gerçekten kapalı olduğu, yalnız "yükseltme yokken" görülebilir.
    */
+  // ⚠ auth_reauthentication.user_id TEXT'tir (auth_user.id ile eşleşir),
+  // users.id ise UUID — karşılaştırma açık cast ister.
   await sql.query(
-    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id FROM users WHERE email = 'admin@example.com')",
+    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id::text FROM users WHERE email = 'admin@example.com')",
   );
   const stepUpsuz = await sa.patch(`/api/v1/services/${hizmetPasif}`, { isActive: false });
   check(
