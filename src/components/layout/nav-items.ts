@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   ListChecks,
   MonitorSmartphone,
+  Package,
   PiggyBank,
   Receipt,
   Settings,
@@ -49,6 +50,8 @@ const GROUPS: NavGroup[] = [
     label: "MÜŞTERİ",
     items: [
       { href: "/markalar", label: "Markalar", icon: Store, roles: ["super_admin", "finance", "operations"] },
+      // Katalogu SA yönetir; FIN ve OPS okur (docs/02 §3.2)
+      { href: "/hizmetler", label: "Hizmetler", icon: Package, roles: ["super_admin", "finance", "operations"] },
       { href: "/sozlesmeler", label: "Sözleşmeler", icon: FileText, roles: ["super_admin", "finance", "operations"] },
     ],
   },

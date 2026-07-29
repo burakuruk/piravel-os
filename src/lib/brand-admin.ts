@@ -1,6 +1,7 @@
 import { and, asc, eq, ilike, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import { db, type Db } from "@/db";
 import {
+  auditLogs,
   brandAssignments,
   brandContacts,
   brands,
@@ -283,26 +284,30 @@ export interface MarkaFiltresi {
   industry?: string;
 }
 
-/** Canlı hizmet sayısı — korelasyonlu alt sorgu, satır başına tek değer. */
+/**
+ * Korelasyonlu alt sorgular — satır başına tek değer.
+ *
+ * ⚠ Tablo ve kolon adları BİLEREK düz metin yazılır, Drizzle nesnesi
+ * interpolasyonu yapılmaz: `${brands.id}` bir alt sorgunun İÇİNDE dış tabloya
+ * korelasyon kurmaz, bağlı bir parametreye dönüşür ve karşılaştırma sessizce
+ * hiçbir satırla eşleşmez — sayılar her markada 0 çıkar. Bu hata yalnız
+ * ekranda fark edilir; tip sistemi yakalamaz.
+ */
 const hizmetSayisiSql = sql<number>`(
-  SELECT count(*)::int FROM ${brandServices}
-   WHERE ${brandServices.brandId} = ${brands.id}
-     AND ${brandServices.deletedAt} IS NULL
+  SELECT count(*)::int FROM brand_services bs
+   WHERE bs.brand_id = brands.id AND bs.deleted_at IS NULL
 )`;
 
 /** Canlı atama sayısı. */
 const ekipSayisiSql = sql<number>`(
-  SELECT count(*)::int FROM ${brandAssignments}
-   WHERE ${brandAssignments.brandId} = ${brands.id}
-     AND ${brandAssignments.deletedAt} IS NULL
+  SELECT count(*)::int FROM brand_assignments ba
+   WHERE ba.brand_id = brands.id AND ba.deleted_at IS NULL
 )`;
 
 /** Birincil yetkilinin adı — listede "hangi marka boşta" sorusu için. */
 const birincilYetkiliSql = sql<string | null>`(
-  SELECT ${brandContacts.fullName} FROM ${brandContacts}
-   WHERE ${brandContacts.brandId} = ${brands.id}
-     AND ${brandContacts.isPrimary}
-     AND ${brandContacts.deletedAt} IS NULL
+  SELECT bc.full_name FROM brand_contacts bc
+   WHERE bc.brand_id = brands.id AND bc.is_primary AND bc.deleted_at IS NULL
    LIMIT 1
 )`;
 
@@ -318,17 +323,25 @@ function aramaKosulu(q: string | undefined) {
   return or(ilike(brands.name, `%${kacisli}%`), ilike(brands.code, `%${kacisli}%`));
 }
 
-/** Ham marka satırı — süzgeçten GEÇMEDEN önceki hâli. */
-async function markaSatirlari(user: CurrentUser, filtre: MarkaFiltresi = {}) {
-  const kosullar = [
+function listeKosullari(user: CurrentUser, filtre: MarkaFiltresi) {
+  return [
     isNull(brands.deletedAt),
     markaKapsamKosulu(user),
     aramaKosulu(filtre.q),
     filtre.status ? eq(brands.status, filtre.status as never) : undefined,
     filtre.industry ? eq(brands.industry, filtre.industry) : undefined,
   ].filter(Boolean);
+}
 
-  return db
+/** Ham marka satırı — süzgeçten GEÇMEDEN önceki hâli. */
+async function markaSatirlari(
+  user: CurrentUser,
+  filtre: MarkaFiltresi = {},
+  sayfalama?: { limit: number; offset: number },
+) {
+  const kosullar = listeKosullari(user, filtre);
+
+  const sorgu = db
     .select({
       id: brands.id,
       code: brands.code,
@@ -353,6 +366,9 @@ async function markaSatirlari(user: CurrentUser, filtre: MarkaFiltresi = {}) {
     .from(brands)
     .where(and(...kosullar))
     .orderBy(asc(brands.name));
+
+  if (!sayfalama) return sorgu;
+  return sorgu.limit(sayfalama.limit).offset(sayfalama.offset);
 }
 
 /**
@@ -365,6 +381,62 @@ export async function markalariListele(user: CurrentUser, filtre: MarkaFiltresi 
   if (!markaModulunuGorebilirMi(user.role)) return [];
   const satirlar = await markaSatirlari(user, filtre);
   return satirlar.map((s) => markaAlanlariniSuz(s, user.role));
+}
+
+/** Sayfa boyutu — liste ekranı ve API için tek değer. */
+export const SAYFA_BOYUTU = 20;
+
+/**
+ * Sayfalanmış liste.
+ *
+ * Toplam sayı AYNI koşullarla ayrıca sorulur: sayfadaki satır sayısına bakıp
+ * "toplam bu kadar" demek, ikinci sayfayı olmayan bir listede gizlerdi.
+ */
+export async function markalariSayfali(
+  user: CurrentUser,
+  filtre: MarkaFiltresi = {},
+  sayfa = 1,
+) {
+  if (!markaModulunuGorebilirMi(user.role)) {
+    return { kayitlar: [], toplam: 0, sayfa: 1, sayfaSayisi: 1 };
+  }
+  const gecerliSayfa = Number.isFinite(sayfa) && sayfa > 0 ? Math.floor(sayfa) : 1;
+
+  const sayim = await db
+    .select({ adet: sql<number>`count(*)::int` })
+    .from(brands)
+    .where(and(...listeKosullari(user, filtre)));
+  const toplam = sayim[0]?.adet ?? 0;
+  const sayfaSayisi = Math.max(1, Math.ceil(toplam / SAYFA_BOYUTU));
+  const guvenliSayfa = Math.min(gecerliSayfa, sayfaSayisi);
+
+  const satirlar = await markaSatirlari(user, filtre, {
+    limit: SAYFA_BOYUTU,
+    offset: (guvenliSayfa - 1) * SAYFA_BOYUTU,
+  });
+
+  return {
+    kayitlar: satirlar.map((s) => markaAlanlariniSuz(s, user.role)),
+    toplam,
+    sayfa: guvenliSayfa,
+    sayfaSayisi,
+  };
+}
+
+/**
+ * Filtre açılırlarını doldurmak için KAPSAM İÇİNDEKİ sektörler.
+ *
+ * Tüm sektörleri listelemek, OPS'a görmediği markaların sektörlerini
+ * sızdırırdı — küçük ama gerçek bir bilgi kaçağı.
+ */
+export async function kapsamdakiSektorler(user: CurrentUser): Promise<string[]> {
+  if (!markaModulunuGorebilirMi(user.role)) return [];
+  const rows = await db
+    .selectDistinct({ industry: brands.industry })
+    .from(brands)
+    .where(and(isNull(brands.deletedAt), markaKapsamKosulu(user)))
+    .orderBy(asc(brands.industry));
+  return rows.map((r) => r.industry).filter((s): s is string => Boolean(s));
 }
 
 /** Tek marka — listeyle AYNI kapsam ve AYNI alan süzgecinden geçer. */
@@ -540,6 +612,39 @@ export async function markaDurumDegistir(input: {
   return sonuc[0];
 }
 
+/**
+ * Son değişiklikler — markanın son N denetim olayı.
+ *
+ * Tam denetim ekranı bu sprintte yok; ama "bu markayı en son kim değiştirdi"
+ * sorusu detay sayfasından çıkmamalı. Alt kayıtların (yetkili, hizmet, atama)
+ * olayları `changes.markaId` ile bağlanır — bu yüzden sorgu iki koşulu da
+ * arar.
+ *
+ * ⚠ `changes` gövdesi EKRANA ÇIKMAZ: yalnız işlem etiketi, aktörün e-postası
+ * ve zaman gösterilir. Denetim gövdesi redact'ten geçse de serbest bir alandır
+ * ve arayüze taşınacak bir şey değildir.
+ */
+export async function sonDegisiklikler(brandId: string, adet = 3) {
+  const rows = await db
+    .select({
+      id: auditLogs.id,
+      islem: auditLogs.entityLabel,
+      eylem: auditLogs.action,
+      kullanici: auditLogs.actorEmail,
+      tarih: auditLogs.createdAt,
+    })
+    .from(auditLogs)
+    .where(
+      or(
+        and(eq(auditLogs.entityType, "brand"), eq(auditLogs.entityId, brandId)),
+        sql`${auditLogs.changes} ->> 'markaId' = ${brandId}`,
+      ),
+    )
+    .orderBy(sql`${auditLogs.createdAt} DESC`)
+    .limit(adet);
+  return rows;
+}
+
 // ══════════════════════════════════════════════════════════════════════════
 // Marka yetkilileri (brand_contacts)
 // ══════════════════════════════════════════════════════════════════════════
@@ -693,10 +798,10 @@ async function birincilligiDusur(islem: Islem, brandId: string): Promise<void> {
 export async function hizmetleriListele(role: UserRole) {
   if (!markaModulunuGorebilirMi(role)) return [];
 
+  // Düz metin: alt sorgu içinde Drizzle interpolasyonu korelasyon kurmaz
   const kullananMarka = sql<number>`(
-    SELECT count(*)::int FROM ${brandServices}
-     WHERE ${brandServices.serviceId} = ${services.id}
-       AND ${brandServices.deletedAt} IS NULL
+    SELECT count(*)::int FROM brand_services bs
+     WHERE bs.service_id = services.id AND bs.deleted_at IS NULL
   )`;
 
   const satirlar = await db
@@ -954,6 +1059,11 @@ export async function markadanHizmetCikar(input: {
  * "bu marka onlara atanmış" izlenimi verir ve yetki tablosunu yanıltırdı.
  * Rol süzgeci sorgunun içindedir — atama yanlışlıkla açılmış olsa bile
  * yanıta girmez.
+ *
+ * ⚠ Yanıt EKRANIN İHTİYACI KADAR: ad, e-posta, rol ve atama tarihi. Oturum,
+ * 2FA, aktiflik, son giriş gibi kullanıcı güvenlik alanları buraya HİÇ
+ * girmez — `select` listesi bunun tek kapısıdır. Bir marka ekranı,
+ * kullanıcının güvenlik durumunu okumanın yeri değildir.
  */
 export async function atamalariListele(brandId: string) {
   return db

@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { chromium } from "playwright";
 import pg from "pg";
-import { totp } from "./_totp.mjs";
+import { tazeTotp } from "./_totp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // .env'i bağımlılıksız oku (Node 22 --env-file'a alternatif, cross-platform)
@@ -46,6 +46,7 @@ const OTURUM = {
   // YAPILMAZ — aksi hâlde fixture kirlenir ve doğrulama testleri bozulur.
   sa: { email: "admin@example.com", password: "gelistirme-test-parolasi", needs2fa: true },
   fin: { email: "finance@example.com", password: "gelistirme-test-parolasi", needs2fa: true },
+  ops: { email: "operations@example.com", password: "gelistirme-test-parolasi", needs2fa: false },
   mem: { email: "member@example.com", password: "gelistirme-test-parolasi", needs2fa: false },
 };
 
@@ -151,7 +152,7 @@ async function oturumAc(page, { email, password, needs2fa }, setupOnly = false) 
   if (signIn.json?.twoFactorRedirect) {
     const secret = anahtarlar.get(email);
     if (!secret) throw new Error(`${email} için anahtar önbellekte yok`);
-    const res = await apiPost(page, "/api/auth/two-factor/verify-totp", { code: totp(secret) });
+    const res = await apiPost(page, "/api/auth/two-factor/verify-totp", { code: await tazeTotp(secret) });
     if (!res.ok) throw new Error(`TOTP doğrulanamadı (${email}): ${res.status}`);
     return;
   }
@@ -164,7 +165,7 @@ async function oturumAc(page, { email, password, needs2fa }, setupOnly = false) 
   if (enable.ok) {
     const secret = new URL(enable.json.totpURI).searchParams.get("secret");
     anahtarlar.set(email, secret);
-    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: totp(secret) });
+    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: await tazeTotp(secret) });
   }
 }
 
@@ -185,6 +186,22 @@ async function fixtureSifirla() {
     [mails],
   );
   await sql.query("UPDATE auth_user SET two_factor_enabled = false WHERE email = ANY($1)", [mails]);
+  /**
+   * ⚠ TOTP KİLİT DURUMU DA SIFIRLANIR.
+   *
+   * Bu script her kare için yeniden giriş yapar; bir kare çökerse ya da kod
+   * aynı 30 saniyelik pencerede iki kez gönderilirse başarısız TOTP sayacı
+   * artar ve 5 denemede hesap 15 dakika kilitlenir (auth-lockout §totp).
+   * Kilit sonraki koşuya devredildiğinde giriş sessizce yarım kalır: oturum
+   * çerezi vardır ama 2FA doğrulanmamıştır, korumalı sayfa /giris'e yönlenir
+   * ve kare "alan bulunamadı" diye patlar. Sebep görselde görünmediği için
+   * yanıltıcıdır — durum bu yüzden baştan temizlenir.
+   *
+   * Korumanın KENDİSİ kapatılmaz; yalnız fixture durumu sıfırlanır
+   * (limitin davranışı verify:lockout tarafından sınanır).
+   */
+  await sql.query("DELETE FROM auth_security_state");
+  await sql.query("DELETE FROM auth_login_attempts");
   await sql.end();
 }
 
@@ -316,8 +333,172 @@ async function oturumFixtureleri(email) {
   await sql.end();
 }
 
+/**
+ * Marka modülünün GÖRSEL fixture'ı.
+ *
+ * ⚠ Yalnız sahte veri: kodlar `SVZ/TKL/SAJ/ORN`, adresler `example.com`.
+ * Doğrudan SQL ile kurulur — bu bir davranış testi değil, görsel fixture'ı;
+ * amaç her koşuda AYNI ekranın üretilmesi. Davranış `verify:brands`in işi.
+ *
+ * Denetim satırları da elle eklenir: "Son değişiklikler" kartı boş görünmesin
+ * ve zaman damgaları koşudan koşuya oynamasın.
+ */
+async function markaFixtureleri() {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+
+  const kodlar = ["SVZ", "TKL", "SAJ", "ORN"];
+  const hizmetKodlari = ["SM", "SEO", "PR", "PROD"];
+
+  /**
+   * `verify:brands`in bıraktığı `DGR*` markaları ve `DGH*` hizmetleri.
+   *
+   * Çöken bir doğrulama koşusu bunları geride bırakabilir ve görsellere sızar
+   * — hatta formül enjeksiyonu denemesi için oluşturulan marka adı ekran
+   * görüntüsünde belirir. Görsellerde yalnız okunabilir, sınırlı bir sahte
+   * kadro bulunmalı.
+   */
+  for (const [tablo, kolon, desen] of [
+    ["brand_assignments", "brand_id", "DGR%"],
+    ["brand_services", "brand_id", "DGR%"],
+    ["brand_contacts", "brand_id", "DGR%"],
+  ]) {
+    await sql.query(
+      `DELETE FROM ${tablo} WHERE ${kolon} IN (SELECT id FROM brands WHERE code LIKE '${desen}')`,
+    );
+  }
+  await sql.query("DELETE FROM brands WHERE code LIKE 'DGR%'");
+  await sql.query(
+    "DELETE FROM brand_services WHERE service_id IN (SELECT id FROM services WHERE code LIKE 'DGH%')",
+  );
+  await sql.query("DELETE FROM services WHERE code LIKE 'DGH%'");
+
+  // FK'ler RESTRICT: çocuklar önce düşer
+  await sql.query(
+    "DELETE FROM brand_assignments WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1))",
+    [kodlar],
+  );
+  await sql.query(
+    "DELETE FROM brand_services WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1))",
+    [kodlar],
+  );
+  await sql.query(
+    "DELETE FROM brand_contacts WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1))",
+    [kodlar],
+  );
+  /**
+   * ⚠ audit_logs TEMİZLENMEZ ve temizlenemez: append-only trigger DELETE'i
+   * reddeder (şema Karar 5). Markalar her koşuda yeni kimlikle kurulduğu için
+   * eski denetim satırları ölü kimlikleri işaret eder ve hiçbir ekrana
+   * girmez — tarihçenin dokunulmazlığı da bozulmaz.
+   */
+  await sql.query("DELETE FROM brands WHERE code = ANY($1)", [kodlar]);
+  await sql.query(
+    "DELETE FROM brand_services WHERE service_id IN (SELECT id FROM services WHERE code = ANY($1))",
+    [hizmetKodlari],
+  );
+  await sql.query("DELETE FROM services WHERE code = ANY($1)", [hizmetKodlari]);
+
+  const marka = async (code, name, legalName, industry, status, tax, taxOffice, email, phone) => {
+    const { rows } = await sql.query(
+      `INSERT INTO brands (code, name, legal_name, industry, status, tax_number, tax_office,
+                           email, phone, address, onboarded_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+      [code, name, legalName, industry, status, tax, taxOffice, email, phone,
+       "Örnek Mahallesi, Sahte Caddesi No:1, İstanbul", "2026-03-12"],
+    );
+    return rows[0].id;
+  };
+
+  const svz = await marka("SVZ", "Sahte Vize A.Ş.", "Sahte Vize Danışmanlık Ltd. Şti.",
+    "Danışmanlık", "active", "1234567890", "Örnek VD", "info@example.com", "+90 555 000 0001");
+  await marka("TKL", "Test Klinik", "Test Sağlık Hizmetleri A.Ş.", "Sağlık", "active",
+    "2345678901", "Deneme VD", "iletisim@example.com", "+90 555 000 0002");
+  await marka("SAJ", "Sahte Ajans", null, "Pazarlama", "lead", null, null,
+    "merhaba@example.com", null);
+  await marka("ORN", "Örnek Mimarlık", "Örnek Mimarlık Ltd.", "Mimarlık", "suspended",
+    "3456789012", "Sahte VD", "ornek@example.com", "+90 555 000 0004");
+
+  const hizmet = async (code, name, unit, aktif) => {
+    const { rows } = await sql.query(
+      `INSERT INTO services (code, name, category, default_unit, is_active)
+       VALUES ($1,$2,'genel',$3,$4) RETURNING id`,
+      [code, name, unit, aktif],
+    );
+    return rows[0].id;
+  };
+  const sm = await hizmet("SM", "Sosyal medya yönetimi", "Aylık", true);
+  const seo = await hizmet("SEO", "Arama motoru optimizasyonu", "Aylık", true);
+  const pr = await hizmet("PR", "Basın ilişkileri", "Aylık", true);
+  await hizmet("PROD", "İçerik prodüksiyon", "Proje", false);
+
+  for (const h of [sm, seo, pr]) {
+    await sql.query("INSERT INTO brand_services (brand_id, service_id) VALUES ($1,$2)", [svz, h]);
+  }
+
+  await sql.query(
+    `INSERT INTO brand_contacts (brand_id, full_name, title, email, phone, is_primary)
+     VALUES ($1,'Sahte Yetkili','Pazarlama Müdürü','sahte.yetkili@example.com','+90 555 111 0001',true),
+            ($1,'Örnek Kişi','Finans','ornek.kisi@example.com','+90 555 111 0002',false)`,
+    [svz],
+  );
+
+  const { rows: ops } = await sql.query(
+    "SELECT id FROM users WHERE email = 'operations@example.com'",
+  );
+  if (ops[0]) {
+    await sql.query("INSERT INTO brand_assignments (brand_id, user_id) VALUES ($1,$2)", [
+      svz,
+      ops[0].id,
+    ]);
+  }
+
+  /**
+   * ATANMAMIŞ ikinci bir operasyon kullanıcısı.
+   *
+   * Tek OPS kullanıcısı zaten atanmış olduğu için aday araması boş çıkıyor ve
+   * "ekip atama" görseli ekranın asıl işini göstermiyordu. Bu kadro yalnız
+   * görsel içindir; parolası yoktur, giriş yapamaz.
+   */
+  const ikinciOps = "sahte-ops2@example.com";
+  // FK RESTRICT: kullanıcı silinmeden önce atamaları düşmeli
+  await sql.query(
+    "DELETE FROM brand_assignments WHERE user_id IN (SELECT id FROM users WHERE email = $1)",
+    [ikinciOps],
+  );
+  await sql.query("DELETE FROM users WHERE email = $1", [ikinciOps]);
+  await sql.query("DELETE FROM auth_user WHERE email = $1", [ikinciOps]);
+  const { rows: yeniId } = await sql.query("SELECT gen_random_uuid() AS id");
+  await sql.query(
+    `INSERT INTO auth_user (id, name, email, email_verified, created_at, updated_at)
+     VALUES ($1,'Sahte Operasyon',$2,false,now(),now())`,
+    [yeniId[0].id, ikinciOps],
+  );
+  await sql.query(
+    `INSERT INTO users (id, email, full_name, role, is_active, activated_at, created_at, updated_at)
+     VALUES ($1,$2,'Sahte Operasyon','operations',true,now(),now(),now())`,
+    [yeniId[0].id, ikinciOps],
+  );
+
+  // "Son değişiklikler" kartı için sabit denetim satırları
+  const olay = async (etiket, mail, gunOnce) => {
+    await sql.query(
+      `INSERT INTO audit_logs (actor_email, action, entity_type, entity_id, entity_label, created_at)
+       VALUES ($1,'update','brand',$2,$3, now() - ($4 || ' days')::interval)`,
+      [mail, svz, etiket, String(gunOnce)],
+    );
+  };
+  await olay("Hizmet eklendi: SEO", "admin@example.com", 1);
+  await olay("Yetkili güncellendi", "operations@example.com", 2);
+  await olay("Marka oluşturuldu", "admin@example.com", 130);
+
+  await sql.end();
+  return { svz };
+}
+
 await fixtureSifirla();
 const { bekleyenId, pasifId, opsId } = await kullaniciFixtureleri();
+const { svz: markaSvzId } = await markaFixtureleri();
 
 /** Kullanıcı yönetimi ekranları — fixture kimlikleri hazır olduktan sonra eklenir. */
 shots.push(
@@ -409,6 +590,129 @@ shots.push(
       await page.waitForSelector('[role="dialog"]');
     } },
 );
+
+/**
+ * Sprint 2 — GERÇEK marka ekranları (wireframe değil).
+ *
+ * Roller bilerek karıştırılır: aynı ekranın SA ve OPS görünümü yan yana
+ * konabilsin ve vergi alanlarının OPS'ta BULUNMADIĞI görselden de okunabilsin.
+ */
+const MARKA = `/markalar/${markaSvzId}`;
+shots.push(
+  // ── Liste ──
+  { file: "80-markalar-1440x900.png", path: "/markalar", w: 1440, h: 900, auth: "sa" },
+  { file: "81-markalar-mobil-375x1350.png", path: "/markalar", w: 375, h: 1350, auth: "sa" },
+  { file: "82-markalar-filtreli-1440x800.png", path: "/markalar?durum=active&sektor=Sağlık", w: 1440, h: 800, auth: "sa" },
+  { file: "83-markalar-bos-1440x700.png", path: "/markalar?q=bulunmayan-marka", w: 1440, h: 700, auth: "sa" },
+  { file: "84-markalar-ops-kapsam-1440x800.png", path: "/markalar", w: 1440, h: 800, auth: "ops" },
+
+  // ── Yeni marka ──
+  { file: "85-marka-yeni-1440x1150.png", path: "/markalar/yeni", w: 1440, h: 1150, auth: "sa",
+    async hazirla(page) {
+      await page.fill("#ym-kod", "dnm");
+      await page.fill("#ym-ad", "Deneme Marka");
+      await page.fill("#ym-unvan", "Deneme Marka Ltd. Şti.");
+      await page.fill("#ym-sektor", "Danışmanlık");
+      await page.fill("#ym-eposta", "deneme@example.com");
+      await page.fill("#ym-vergino", "9876543210");
+    } },
+  { file: "86-marka-yeni-mobil-375x1500.png", path: "/markalar/yeni", w: 375, h: 1500, auth: "sa" },
+  { file: "87-marka-yeni-dogrulama-1440x900.png", path: "/markalar/yeni", w: 1440, h: 900, auth: "sa",
+    async hazirla(page) {
+      // Geçersiz kod: satır içi doğrulama mesajı görünsün
+      await page.fill("#ym-kod", "A B");
+      await page.fill("#ym-ad", "X");
+      await page.click("#ym-unvan");
+    } },
+
+  // ── Detay ──
+  { file: "88-marka-detay-1440x1500.png", path: MARKA, w: 1440, h: 1500, auth: "sa" },
+  { file: "89-marka-detay-mobil-375x2350.png", path: MARKA, w: 375, h: 2350, auth: "sa" },
+  { file: "90-marka-detay-ops-1440x1450.png", path: MARKA, w: 1440, h: 1450, auth: "ops" },
+  { file: "91-marka-duzenleme-1440x1500.png", path: MARKA, w: 1440, h: 1500, auth: "sa",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Düzenle" }).first().click();
+      await page.waitForSelector("#mk-ad");
+    } },
+  { file: "92-yetkili-ekleme-1440x1550.png", path: MARKA, w: 1440, h: 1550, auth: "sa",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "+ Yetkili ekle" }).click();
+      await page.waitForSelector("#myk-ad");
+      await page.fill("#myk-ad", "Yeni Sahte Yetkili");
+      await page.fill("#myk-unvan", "Operasyon Müdürü");
+      await page.fill("#myk-eposta", "yeni.yetkili@example.com");
+    } },
+  { file: "93-marka-hizmet-ekleme-1440x1500.png", path: MARKA, w: 1440, h: 1500, auth: "sa",
+    async hazirla(page) {
+      await page.selectOption("#mh-secim", { label: "PROD · İçerik prodüksiyon" }).catch(async () => {
+        // PROD pasif olduğu için listede yok; aktif olan ilk seçeneği seç
+        const secenekler = await page.locator("#mh-secim option").allTextContents();
+        const ilk = secenekler.find((s) => s.includes("·"));
+        if (ilk) await page.selectOption("#mh-secim", { label: ilk });
+      });
+    } },
+
+  // ── Ekip atama ──
+  { file: "94-ekip-atama-1440x1500.png", path: MARKA, w: 1440, h: 1500, auth: "sa",
+    async hazirla(page) {
+      await page.fill("#ekip-ara", "");
+      await page.getByRole("button", { name: "Ara", exact: true }).click();
+      await page.waitForSelector("text=ARAMA SONUCU");
+    } },
+  { file: "95-atama-kaldirma-onayi-1440x1000.png", path: MARKA, w: 1440, h: 1000, auth: "sa",
+    async hazirla(page) {
+      await ekipKaldirTikla(page);
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  { file: "96-atama-stepup-1440x1000.png", path: MARKA, w: 1440, h: 1000, auth: "sa",
+    async hazirla(page) {
+      /**
+       * Step-up penceresini GERÇEKTEN tetikler: SA'nın yükseltmesi silinir,
+       * onay verilir ve uç SESSION_STALE döner. Pencere sahte değildir.
+       */
+      await stepUpSifirla(OTURUM.sa.email);
+      await ekipKaldirTikla(page);
+      await page.waitForSelector('[role="dialog"]');
+      await page.getByRole("button", { name: "Atamayı kaldır" }).click();
+      await page.waitForSelector("#stepup-parola");
+    } },
+  { file: "97-ekip-atama-fin-salt-okuma-1440x1400.png", path: MARKA, w: 1440, h: 1400, auth: "fin" },
+
+  // ── Hizmet kataloğu ──
+  { file: "98-hizmet-katalogu-sa-1440x900.png", path: "/hizmetler", w: 1440, h: 900, auth: "sa" },
+  { file: "99-hizmet-katalogu-ops-1440x900.png", path: "/hizmetler", w: 1440, h: 900, auth: "ops" },
+  { file: "100-hizmet-katalogu-mobil-375x1200.png", path: "/hizmetler", w: 375, h: 1200, auth: "sa" },
+  { file: "101-hizmet-pasiflestirme-onayi-1440x900.png", path: "/hizmetler", w: 1440, h: 900, auth: "sa",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Pasifleştir" }).first().click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+);
+
+/**
+ * SORUMLU EKİP kartındaki "Kaldır" düğmesine basar.
+ *
+ * ⚠ Sayfada birden çok "Kaldır" var (yetkili kişiler kartı da içeriyor) ve DOM
+ * sırasında yetkililer önce gelir. `.first()` ile aramak yanlış pencereyi
+ * açar; locator bu yüzden başlığıyla o bölüme sabitlenir.
+ */
+async function ekipKaldirTikla(page) {
+  const ekip = page.locator("section", {
+    has: page.getByRole("heading", { name: "Sorumlu ekip" }),
+  });
+  await ekip.getByRole("button", { name: "Kaldır" }).first().click();
+}
+
+/** Kullanıcının step-up kaydını siler — kapının kapalı hâli görüntülenebilsin. */
+async function stepUpSifirla(email) {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+  await sql.query(
+    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id::text FROM users WHERE email = $1)",
+    [email],
+  );
+  await sql.end();
+}
 
 /**
  * Styleguide ÜRETİMDE 404 döner (bilerek). Görselleri bu yüzden yalnız

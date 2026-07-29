@@ -505,6 +505,44 @@ Gerçek veya ileride kullanılabilecek hiçbir değer repoya girmez.
 
 ---
 
+## 16.9 Sprint 2 — marka modülünün GERÇEK ekranları
+
+Wireframe'ler `/wireframe/*` altında tartışma amacıyla duruyor; üretimdeki
+ekranlar bunlardır.
+
+| Rota | Ekran | Roller | Notlar |
+|---|---|---|---|
+| `/markalar` | Marka listesi | SA, FIN, OPS🔷 | Arama + durum/sektör filtresi + sayfalama (20/sayfa) + CSV. Masaüstünde tablo, **mobilde kart**. |
+| `/markalar/yeni` | Yeni marka | SA, FIN | Yalnız kimlik bilgileri. Kodun değiştirilemeyeceği formda yazılı. |
+| `/markalar/:id` | Marka detayı | SA, FIN, OPS🔷 | Tek sayfa: kimlik, yetkililer, hizmetler, sorumlu ekip, son 3 değişiklik, notlar. |
+| `/hizmetler` | Hizmet kataloğu | SA yazar; FIN/OPS okur | SA dışındaki rollerde yazma kontrolleri **DOM'a hiç girmez**. |
+
+**Bu ekranlarda sabitlenen kurallar**
+
+- **Salt okunur alan input GİBİ GÖRÜNMEZ.** Detayda kimlik/iletişim/vergi
+  bilgileri düz metin (`<dl>`); input, select ve form alanları yalnız
+  "Düzenle" modunda DOM'a girer. Çerçeveli bir kutu kullanıcıya "buraya
+  yazabilirim" der ve tıklayınca hiçbir şey olmaz.
+- **Marka kodu düzenleme modunda da input değildir** — oluşturulduktan sonra
+  değiştirilemez; denemeye açık bırakmak reddedilecek bir işi yaptırmak olur.
+- **Mobil kart TEK bir `<a>`'dır.** Chevron ile ayrı bir "Detay" bağlantısı
+  aynı işi iki kez yapardı; gerçek bağlantı kullanılır, salt `onClick`
+  klavyeyle ve ekran okuyucuyla erişilemez.
+- **Yatay taşma yok.** Satır içi buton grupları dar ekranda alt alta geçer;
+  `shrink-0` bir grup 375 px'te satırı viewport'un dışına iter.
+- **Yetki görünürlüğü ile yetki aynı şey değildir.** Rolün yapamayacağı işin
+  düğmesi render edilmez, ama asıl kapı API'dedir (`verify:brands` her ikisini
+  de sınar).
+- **Yıkıcı işlem onay ister**, kritik işlem ortak step-up penceresini kullanır
+  (`src/components/ui/onay-dialog.tsx`, `step-up-dialog.tsx`).
+- **API hata kodu ham gösterilmez**: eşleme
+  `src/app/(app)/markalar/etiketler.ts` içinde tek yerdedir.
+
+Görseller: `docs/previews/80-101` (masaüstü + mobil, rol bazlı görünümler,
+onay ve step-up pencereleri, boş ve filtreli liste).
+
+---
+
 ## 17. Anti-pattern listesi (uygulanmaz)
 
 1. Mor/mavi gradient zeminler, "AI dashboard" estetiği

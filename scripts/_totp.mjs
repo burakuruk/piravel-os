@@ -26,3 +26,27 @@ export function totp(base32Secret, at = Date.now()) {
     (hmac[offset + 3] & 0xff);
   return String(code % 1_000_000).padStart(6, "0");
 }
+
+/** Sır başına en son kullanılmış kod — replay'i önlemek için. */
+const kullanilan = new Map();
+
+/**
+ * HENÜZ KULLANILMAMIŞ bir TOTP kodu döndürür; gerekirse yeni pencereyi bekler.
+ *
+ * ⚠ Aynı kod iki kez gönderilemez: TOTP penceresi 30 saniyedir ve doğrulayıcı
+ * kullanılmış kodu REPLAY sayıp reddeder. Art arda birkaç kez giriş yapan veya
+ * step-up alan otomasyon, ikinci isteğinde aynı pencereye düşerse
+ * "geçersiz kod" alır; üst üste gelen bu başarısızlıklar hesap kilidini
+ * tetikleyip oturumu düşürür ve sonraki adımlar "yetki yok" gibi görünen
+ * sahte hatalarla patlar. Hata otomasyona özgüdür — gerçek kullanıcı iki
+ * saniyede iki kez kod girmez.
+ */
+export async function tazeTotp(base32Secret) {
+  let kod = totp(base32Secret);
+  while (kod === kullanilan.get(base32Secret)) {
+    await new Promise((c) => setTimeout(c, 2000));
+    kod = totp(base32Secret);
+  }
+  kullanilan.set(base32Secret, kod);
+  return kod;
+}

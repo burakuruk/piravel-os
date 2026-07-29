@@ -5,7 +5,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { USER_ROLES } from "@/lib/auth-policy";
 import { ROL_ETIKET } from "../etiketler";
-import { StepUpDialog } from "../step-up-dialog";
+import { StepUpDialog } from "@/components/ui/step-up-dialog";
 import { DavetBaglantisi } from "../davet-baglantisi";
 
 /**

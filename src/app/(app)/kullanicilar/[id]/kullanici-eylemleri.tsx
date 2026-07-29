@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { USER_ROLES } from "@/lib/auth-policy";
 import { DavetBaglantisi } from "../davet-baglantisi";
 import { ROL_ETIKET } from "../etiketler";
-import { StepUpDialog } from "../step-up-dialog";
+import { StepUpDialog } from "@/components/ui/step-up-dialog";
 
 /**
  * Kullanıcı yönetim işlemleri.

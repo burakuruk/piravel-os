@@ -156,7 +156,9 @@ docker run -d --name pg-deneme -e POSTGRES_USER=piravel -e POSTGRES_PASSWORD=pir
   -e POSTGRES_DB=piravel_os postgres:16
 docker exec -i pg-deneme psql -U piravel -d postgres < roller.sql
 docker exec -i pg-deneme psql -U piravel -d piravel_os < piravel_os.sql
-# sayımları karşılaştır, sonra: docker rm -f pg-deneme
+# sayımları karşılaştır + YAPIYI da doğrula (tablo · kısıt · index · trigger · pg_trgm):
+DATABASE_ADMIN_URL=postgres://piravel:piravel@localhost:<port>/piravel_os npm run verify:schema
+# sonra: docker rm -f pg-deneme
 
 # 4. Geri yükleme sırası: ÖNCE roller, SONRA veritabanı
 #    (dump, piravel_app rolüne GRANT verir; rol yoksa yükleme hata verir)

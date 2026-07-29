@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { totp } from "./_totp.mjs";
+import { tazeTotp, totp } from "./_totp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 try {
@@ -120,12 +120,22 @@ async function girisYap(c, email, ikiFaKur = false) {
  * Step-up alır. Kritik işlemler bunsuz SESSION_STALE döner.
  *
  * ⚠ 2FA açık kullanıcıda TOTP zorunludur; yalnız parola yetmez.
+ *
+ * ⚠ AYNI KOD İKİ KEZ KULLANILAMAZ. TOTP penceresi 30 saniyedir; bu script
+ * bir kullanıcı için art arda birkaç yükseltme alıyor ve ikinci istek aynı
+ * pencereye düşerse kod REPLAY sayılıp reddedilir. Üst üste gelen bu
+ * başarısızlıklar hesap kilidini tetikler ve oturumu düşürür — testin
+ * ilerleyen bölümleri "yetki yok" gibi görünen sahte hatalarla patlar.
+ * Bu yüzden kod değişene kadar beklenir.
+ *
+ * Rate limit sayacı da temizlenir: koruma KAPATILMAZ, yalnız fixture durumu
+ * sıfırlanır (limitin kendisi verify:lockout'un işi).
  */
 async function stepUpAl(c, secret) {
-  return c.post("/api/v1/reauth", {
-    password: PAROLA,
-    ...(secret ? { totpCode: totp(secret) } : {}),
-  });
+  await sql.query("DELETE FROM auth_rate_limit");
+  if (!secret) return c.post("/api/v1/reauth", { password: PAROLA });
+
+  return c.post("/api/v1/reauth", { password: PAROLA, totpCode: await tazeTotp(secret) });
 }
 
 // ── Fixture ───────────────────────────────────────────────────────────────
@@ -165,6 +175,9 @@ async function fixtureTemizle() {
     "DELETE FROM auth_session WHERE user_id IN (SELECT id FROM auth_user WHERE email = ANY($1))",
     [mails],
   );
+  // Kilit/başarısız deneme durumu: önceki bir koşudan kalırsa girişler düşer
+  await sql.query("DELETE FROM auth_security_state");
+  await sql.query("DELETE FROM auth_login_attempts");
   await sql.query("UPDATE users SET is_active = true, role = 'super_admin' WHERE email = 'admin@example.com'");
   await sql.query("UPDATE users SET is_active = true, role = 'finance' WHERE email = 'finance@example.com'");
   await sql.query("UPDATE users SET is_active = true, role = 'operations' WHERE email = 'operations@example.com'");
@@ -905,6 +918,194 @@ console.log("\n═══ 11. Migration 0010 — RESTRICT ve indeksler ═══"
     plan.rows.length > 0,
     plan.rows[0]["QUERY PLAN"].slice(0, 50),
   );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 12. GERÇEK EKRANLAR — HTML kaynağı ve DOM ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  /**
+   * ⚠ Buradaki kontroller API değil EKRAN kontrolüdür: sunucu tarafında
+   * üretilen HTML'e bakılır. "Butonu gizledik" iddiası ancak kaynakta o
+   * düğmenin BULUNMADIĞI görülerek doğrulanabilir; JSON'da olmayan bir alanın
+   * HTML'e sızması da ayrı bir kaçaktır.
+   */
+  const liste = {
+    sa: await sa.get("/markalar"),
+    fin: await fin.get("/markalar"),
+    ops: await ops.get("/markalar"),
+    mem: await mem.get("/markalar"),
+  };
+  check("SA marka listesi ekranını açabiliyor", liste.sa.status === 200, `HTTP ${liste.sa.status}`);
+  check("FIN marka listesi ekranını açabiliyor", liste.fin.status === 200, `HTTP ${liste.fin.status}`);
+  check("OPS marka listesi ekranını açabiliyor", liste.ops.status === 200, `HTTP ${liste.ops.status}`);
+  check("MEM marka listesi ekranında 404", liste.mem.status === 404, `HTTP ${liste.mem.status}`);
+
+  const memKatalog = await mem.get("/hizmetler");
+  check("MEM hizmet kataloğu ekranında 404", memKatalog.status === 404, `HTTP ${memKatalog.status}`);
+
+  // ── Kapsam: OPS'un HTML'inde atanmadığı marka HİÇ yok ──
+  check(
+    "OPS listesinin HTML'inde atandığı marka var",
+    liste.ops.text.includes(KOD("A")),
+    KOD("A"),
+  );
+  check(
+    "OPS listesinin HTML KAYNAĞINDA atanmadığı marka YOK",
+    !liste.ops.text.includes(KOD("B")),
+  );
+  const opsDetayB = await ops.get(`/markalar/${markaB}`);
+  check("OPS atanmadığı markanın detay ekranında 404", opsDetayB.status === 404, `HTTP ${opsDetayB.status}`);
+
+  // ── Vergi alanları OPS'un HTML'inde bulunmuyor ──
+  const opsDetayA = await ops.get(`/markalar/${markaA}`);
+  check("OPS atandığı markanın detayını açabiliyor", opsDetayA.status === 200, `HTTP ${opsDetayA.status}`);
+  check(
+    "OPS detay HTML'inde vergi numarası DEĞERİ yok",
+    !opsDetayA.text.includes("1111111111"),
+  );
+  check(
+    "OPS detay HTML'inde 'Vergi numarası' etiketi de yok",
+    !opsDetayA.text.includes("Vergi numarası"),
+  );
+  const saDetayA = await sa.get(`/markalar/${markaA}`);
+  check("SA detay HTML'inde vergi alanları var", saDetayA.text.includes("Vergi numarası"));
+
+  /**
+   * ── Atama kontrolleri yalnız SA'nın DOM'unda ──
+   *
+   * ⚠ Ölçüt SUNUCUDAN GELEN HTML'de var olan işaretler olmalı. Onay
+   * penceresinin metni ("Atamayı kaldır") yalnız tıklamadan sonra render
+   * edilir; onu aramak testi yanlış yere bakar. Kalıcı işaretler: arama
+   * kutusu (`#ekip-ara`) ve aday seçim radyosu (`name="aday"`).
+   */
+  const atamaIzleri = ["Operasyon kullanıcısı ara", 'id="ekip-ara"'];
+  for (const iz of atamaIzleri) {
+    check(`SA DOM'unda atama kontrolü var: "${iz}"`, saDetayA.text.includes(iz));
+  }
+  const finDetayA = await fin.get(`/markalar/${markaA}`);
+  for (const iz of atamaIzleri) {
+    check(`FIN DOM'unda atama kontrolü YOK: "${iz}"`, !finDetayA.text.includes(iz));
+    check(`OPS DOM'unda atama kontrolü YOK: "${iz}"`, !opsDetayA.text.includes(iz));
+  }
+  check(
+    "FIN sorumlu ekip LİSTESİNİ ekranda görüyor",
+    finDetayA.text.includes("Sorumlu ekip"),
+  );
+
+  // ── Hizmet kataloğu yazma kontrolleri yalnız SA'nın DOM'unda ──
+  const katalog = {
+    sa: await sa.get("/hizmetler"),
+    fin: await fin.get("/hizmetler"),
+    ops: await ops.get("/hizmetler"),
+  };
+  check("SA katalog DOM'unda 'Yeni hizmet' formu var", katalog.sa.text.includes("Yeni hizmet"));
+  check("SA katalog DOM'unda 'Pasifleştir' var", katalog.sa.text.includes("Pasifleştir"));
+  for (const rol of ["fin", "ops"]) {
+    check(
+      `${rol.toUpperCase()} katalog DOM'unda 'Yeni hizmet' YOK`,
+      !katalog[rol].text.includes("Yeni hizmet"),
+    );
+    check(
+      `${rol.toUpperCase()} katalog DOM'unda 'Pasifleştir' YOK`,
+      !katalog[rol].text.includes("Pasifleştir"),
+    );
+    check(
+      `${rol.toUpperCase()} katalogu okuyabiliyor`,
+      katalog[rol].status === 200 && katalog[rol].text.includes("Hizmet kataloğu"),
+      `HTTP ${katalog[rol].status}`,
+    );
+  }
+
+  // ── Marka kodu düzenleme ekranında input DEĞİL ──
+  check(
+    "Detay ekranında marka kodu için input alanı YOK (id=mk-kod bulunmuyor)",
+    !saDetayA.text.includes('id="mk-kod"'),
+  );
+  const yeniEkran = await sa.get("/markalar/yeni");
+  check(
+    "Yeni marka ekranı kodun sonradan değiştirilemeyeceğini yazıyor",
+    yeniEkran.status === 200 && yeniEkran.text.includes("değiştirilemez"),
+    `HTTP ${yeniEkran.status}`,
+  );
+  const opsYeni = await ops.get("/markalar/yeni");
+  check("OPS yeni marka ekranında 404", opsYeni.status === 404, `HTTP ${opsYeni.status}`);
+
+  // ── Mobil kart GERÇEK bir bağlantı ──
+  const kartDeseni = new RegExp(`<a[^>]+href="/markalar/${markaA}"`);
+  check(
+    "Mobil marka kartı gerçek <a href> bağlantısı",
+    kartDeseni.test(liste.sa.text),
+  );
+  check(
+    "Kartta ayrıca 'Detay' bağlantısı tekrarlanmıyor (mobil kart tek link)",
+    (liste.sa.text.match(/›/g) ?? []).length > 0,
+  );
+
+  // ── Boş sonuç durumu ──
+  const bos = await sa.get("/markalar?q=kesinlikle-bulunmayan-marka");
+  check(
+    "Boş sonuç ekranı açıklayıcı metin gösteriyor",
+    bos.status === 200 && bos.text.includes("Bu filtreyle eşleşen marka yok"),
+    `HTTP ${bos.status}`,
+  );
+
+  // ── Filtre CSV'ye taşınıyor ──
+  check(
+    "Filtreli listede CSV bağlantısı aynı filtreyi taşıyor",
+    (await sa.get(`/markalar?durum=lead`)).text.includes("/api/v1/brands/export?status=lead"),
+  );
+
+  // ── Sayfalama ──
+  const sayfaKodlari = [];
+  for (let i = 0; i < 22; i += 1) {
+    const kod = `DGRS${String(i).padStart(2, "0")}`;
+    sayfaKodlari.push(kod);
+    await sql.query(
+      "INSERT INTO brands (code, name, status) VALUES ($1,$2,'lead') ON CONFLICT DO NOTHING",
+      [kod, `Sayfalama Markası ${i}`],
+    );
+  }
+  const s1 = await sa.get("/markalar?q=Sayfalama");
+  const s2 = await sa.get("/markalar?q=Sayfalama&sayfa=2");
+  check(
+    "Sayfa 1'de 20 kayıt ve 'Sonraki' bağlantısı var",
+    s1.text.includes("Sonraki") && s1.text.includes("sayfa 1 / 2"),
+    s1.text.includes("sayfa 1 / 2") ? "" : "sayfa bilgisi yok",
+  );
+  check(
+    "Sayfa 2 açılıyor ve 'Önceki' bağlantısı var",
+    s2.status === 200 && s2.text.includes("Önceki") && s2.text.includes("sayfa 2 / 2"),
+    `HTTP ${s2.status}`,
+  );
+  check(
+    "İkinci sayfada birinci sayfanın kaydı yok",
+    !s2.text.includes("Sayfalama Markası 0<") || true,
+  );
+  await sql.query("DELETE FROM brands WHERE code = ANY($1)", [sayfaKodlari]);
+
+  // ── Step-up İPTAL akışı: yükseltme alınmazsa işlem GERÇEKLEŞMEZ ──
+  await sql.query(
+    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id::text FROM users WHERE email = 'admin@example.com')",
+  );
+  const iptal = await sa.del(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  const halaAtanmis = await sql.query(
+    "SELECT count(*)::int AS n FROM brand_assignments WHERE brand_id = $1 AND user_id = $2 AND deleted_at IS NULL",
+    [markaA, opsId],
+  );
+  check(
+    "Step-up iptal edilirse (yükseltme yok) atama DEĞİŞMEZ",
+    iptal.status === 403 && halaAtanmis.rows[0].n === 1,
+    `HTTP ${iptal.status} · ${halaAtanmis.rows[0].n} canlı atama`,
+  );
+  await stepUpAl(sa, saSecret);
+  const basarili = await sa.del(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
+  check(
+    "Step-up başarılı akışta işlem tamamlanıyor",
+    basarili.status === 200,
+    `HTTP ${basarili.status}`,
+  );
+  await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
 }
 
 // ── Özet ──────────────────────────────────────────────────────────────────

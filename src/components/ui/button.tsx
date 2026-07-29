@@ -26,7 +26,14 @@ const buttonVariants = cva(
 
 export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {}
+    VariantProps<typeof buttonVariants> {
+  /**
+   * React 19'da `ref` sıradan bir prop'tur ve forwardRef gerekmez; ama tipe
+   * açıkça yazılmadan geçmez. Pencerelerin açılışta odağı bir düğmeye
+   * taşıması için gerekli.
+   */
+  ref?: React.Ref<HTMLButtonElement>;
+}
 
 export function Button({ className, variant, size, ...props }: ButtonProps) {
   return <button className={cn(buttonVariants({ variant, size }), className)} {...props} />;
