@@ -68,6 +68,21 @@ const shots = [
   { file: "12-2fa-kurulum-mobil-375x950.png", path: "/wireframe/2fa-kurulum", w: 375, h: 950 },
   { file: "13-kurtarma-kodlari-mobil-375x1000.png", path: "/wireframe/kurtarma-kodlari", w: 375, h: 1000 },
 
+  // ── Sprint 2 wireframe'leri (onay öncesi) ──
+  // Oturum gerektirmez: /wireframe public prefix'te.
+  { file: "60-w-marka-listesi-1440x900.png", path: "/wireframe/marka-listesi", w: 1440, h: 900 },
+  { file: "61-w-marka-yeni-1440x1100.png", path: "/wireframe/marka-yeni", w: 1440, h: 1100 },
+  { file: "62-w-marka-detay-1440x1200.png", path: "/wireframe/marka-detay", w: 1440, h: 1200 },
+  { file: "63-w-marka-yetkili-1440x1100.png", path: "/wireframe/marka-yetkili", w: 1440, h: 1100 },
+  { file: "64-w-hizmet-katalogu-1440x900.png", path: "/wireframe/hizmet-katalogu", w: 1440, h: 900 },
+  { file: "65-w-marka-ekip-atama-1440x1000.png", path: "/wireframe/marka-ekip-atama", w: 1440, h: 1000 },
+  { file: "70-w-marka-listesi-mobil-375x900.png", path: "/wireframe/marka-listesi", w: 375, h: 900 },
+  { file: "71-w-marka-yeni-mobil-375x1100.png", path: "/wireframe/marka-yeni", w: 375, h: 1100 },
+  { file: "72-w-marka-detay-mobil-375x1400.png", path: "/wireframe/marka-detay", w: 375, h: 1400 },
+  { file: "73-w-marka-yetkili-mobil-375x1100.png", path: "/wireframe/marka-yetkili", w: 375, h: 1100 },
+  { file: "74-w-hizmet-katalogu-mobil-375x1100.png", path: "/wireframe/hizmet-katalogu", w: 375, h: 1100 },
+  { file: "75-w-marka-ekip-atama-mobil-375x1100.png", path: "/wireframe/marka-ekip-atama", w: 375, h: 1100 },
+
   // ── Sprint 1: GERÇEK ekranlar (wireframe değil) ──
   { file: "20-giris-gercek-1440x900.png", path: "/giris", w: 1440, h: 900 },
   { file: "21-giris-gercek-mobil-375x812.png", path: "/giris", w: 375, h: 812 },
