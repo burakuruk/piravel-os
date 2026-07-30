@@ -29,6 +29,64 @@ const YASAKLI_DEGERLER: readonly string[] = [
   "changeme",
 ];
 
+/**
+ * Parolalar için bilinen placeholder ve zayıf değerler.
+ *
+ * ⚠ `.env.example` kopyalanıp olduğu gibi kullanıldığında uygulama
+ * AÇILMAMALIDIR. "Örneği kopyaladım, çalıştı" diyen bir kurulum aksi hâlde
+ * zayıf parolayla üretime gider.
+ *
+ * Listede `piravel_app` da var: yerel kurulumda parola bir süre ROL ADIYLA
+ * AYNIYDI. Rol adı repoda, compose dosyasında ve dokümanda açıkça yazıyor;
+ * tahmin edilmesi gereken bir şey kalmıyordu.
+ *
+ * Karşılaştırma büyük/küçük harf duyarsız ve TAM eşleşmedir: güçlü bir
+ * parolanın içinde "test" geçmesi sorun değil.
+ */
+const YASAKLI_PAROLALAR: readonly string[] = [
+  "degistir-bu-degeri",
+  "degistirin",
+  "changeme",
+  "change-me",
+  "password",
+  "parola",
+  "piravel_app",
+  "piravel",
+  "secret",
+  "test",
+  "example",
+];
+
+/** Rol parolasının kabul edilen en küçük uzunluğu (karakter). */
+export const MIN_PAROLA_UZUNLUK = 12;
+
+/**
+ * Veritabanı rol parolasını doğrular.
+ *
+ * Sır doğrulamasından ayrı bir işlev: `APP_DB_PASSWORD` bir bağlantı dizesine
+ * gömüldüğü için karakter kümesi de sınırlıdır (tırnak/boşluk taşıyamaz) ve
+ * eşiği 32 bayt değil 12 karakterdir. Ortak olan tek şey placeholder reddi.
+ */
+export function rolParolasiDogrula(ad: string, ham: string | undefined | null): string {
+  if (ham === undefined || ham === null || ham.trim() === "") {
+    throw new OrtamSirriHatasi(ad, "tanımlı değil veya boş");
+  }
+  const deger = ham.trim();
+  if (YASAKLI_PAROLALAR.includes(deger.toLowerCase())) {
+    throw new OrtamSirriHatasi(
+      ad,
+      "bilinen bir placeholder/zayıf değer — repoda veya dokümanda açıkça yazıyor",
+    );
+  }
+  if (deger.length < MIN_PAROLA_UZUNLUK) {
+    throw new OrtamSirriHatasi(
+      ad,
+      `en az ${MIN_PAROLA_UZUNLUK} karakter olmalı (şu an ${deger.length})`,
+    );
+  }
+  return deger;
+}
+
 /** Doğrulama başarısızlığı — mesaj sırrın KENDİSİNİ asla içermez. */
 export class OrtamSirriHatasi extends Error {
   constructor(ad: string, sebep: string) {

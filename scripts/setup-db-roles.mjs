@@ -28,11 +28,42 @@ if (!adminUrl) {
   process.exit(1);
 }
 
-const password = process.env.APP_DB_PASSWORD ?? "piravel_app";
-// SQL enjeksiyonuna karşı: parola yalnızca güvenli karakterler içerebilir
-if (!/^[A-Za-z0-9._~!#%^*+=-]{8,128}$/.test(password)) {
+/**
+ * ⚠ VARSAYILAN PAROLA YOK.
+ *
+ * Eskiden değişken tanımsızsa `"piravel_app"`e düşülüyordu — yani rol adının
+ * kendisine. Rol adı repoda, compose dosyasında ve dokümanda açıkça yazıyor;
+ * tahmin edilecek bir şey kalmıyordu. Artık eksik değer bir HATADIR.
+ */
+const password = process.env.APP_DB_PASSWORD;
+if (!password) {
+  console.error("HATA: APP_DB_PASSWORD tanımlı değil.");
+  process.exit(1);
+}
+
+/**
+ * Bilinen placeholder ve zayıf değerler — `src/lib/env.ts` ile aynı liste.
+ *
+ * `.env.example` olduğu gibi kopyalanırsa rol parolası bu listeye düşer ve
+ * kurulum burada durur. Aksi hâlde "örneği kopyaladım, çalıştı" diyen bir
+ * kurulum zayıf parolayla üretime giderdi.
+ */
+const YASAKLI_PAROLALAR = [
+  "degistir-bu-degeri", "degistirin", "changeme", "change-me", "password",
+  "parola", "piravel_app", "piravel", "secret", "test", "example",
+];
+if (YASAKLI_PAROLALAR.includes(password.trim().toLowerCase())) {
   console.error(
-    "HATA: APP_DB_PASSWORD 8-128 karakter olmalı ve tırnak/boşluk içermemelidir.",
+    "HATA: APP_DB_PASSWORD bilinen bir placeholder/zayıf değer. Güçlü bir değer üretin:\n" +
+      `  node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"`,
+  );
+  process.exit(1);
+}
+
+// SQL enjeksiyonuna karşı: parola yalnızca güvenli karakterler içerebilir
+if (!/^[A-Za-z0-9._~!#%^*+=-]{12,128}$/.test(password)) {
+  console.error(
+    "HATA: APP_DB_PASSWORD 12-128 karakter olmalı ve tırnak/boşluk içermemelidir.",
   );
   process.exit(1);
 }

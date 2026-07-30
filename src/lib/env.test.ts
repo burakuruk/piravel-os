@@ -1,5 +1,6 @@
+import { randomBytes } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MIN_SIR_BAYT, OrtamSirriHatasi, sirDogrula } from "./env";
+import { MIN_SIR_BAYT, OrtamSirriHatasi, rolParolasiDogrula, sirDogrula } from "./env";
 
 /**
  * Bu testler `sirDogrula`'yı doğrudan çağırır — modül seviyesindeki
@@ -149,5 +150,73 @@ describe("betterAuthSecret() — fail-fast erişimci", () => {
     const taze = await import("./env");
     expect(taze.betterAuthSecret()).toBe(GECERLI);
     expect(taze.betterAuthSecret()).toBe(GECERLI);
+  });
+});
+
+describe("rolParolasiDogrula — placeholder ve zayıf değerler", () => {
+  const GUCLU = randomBytes(32).toString("base64url");
+
+  it("rastgele üretilmiş 43 karakterlik base64url kabul edilir", () => {
+    expect(rolParolasiDogrula("APP_DB_PASSWORD", GUCLU)).toBe(GUCLU);
+    expect(GUCLU.length).toBe(43);
+  });
+
+  /**
+   * ⚠ `.env.example` olduğu gibi kopyalanırsa uygulama AÇILMAMALIDIR.
+   * Bu liste, "örneği kopyaladım, çalıştı" diyen bir kurulumun zayıf parolayla
+   * üretime gitmesini engelleyen tek kapıdır.
+   */
+  it("bilinen placeholder ve zayıf değerler reddedilir", () => {
+    const yasakli = [
+      "degistir-bu-degeri",
+      "degistirin",
+      "changeme",
+      "change-me",
+      "password",
+      "parola",
+      "piravel_app",
+      "piravel",
+      "secret",
+      "test",
+      "example",
+    ];
+    for (const deger of yasakli) {
+      expect(() => rolParolasiDogrula("APP_DB_PASSWORD", deger)).toThrow(OrtamSirriHatasi);
+    }
+  });
+
+  it("büyük/küçük harf duyarsız reddeder", () => {
+    for (const deger of ["Piravel_App", "CHANGEME", "PaSsWoRd"]) {
+      expect(() => rolParolasiDogrula("APP_DB_PASSWORD", deger)).toThrow(OrtamSirriHatasi);
+    }
+  });
+
+  it("yasaklı kelime İÇEREN güçlü parola kabul edilir (tam eşleşme aranır)", () => {
+    // "test" yasaklı ama içinde geçmesi sorun değil — entropi yeterli
+    const deger = `${GUCLU}-test`;
+    expect(rolParolasiDogrula("APP_DB_PASSWORD", deger)).toBe(deger);
+  });
+
+  it("12 karakterden kısa parola reddedilir", () => {
+    expect(() => rolParolasiDogrula("APP_DB_PASSWORD", "kisa123")).toThrow(OrtamSirriHatasi);
+    expect(() => rolParolasiDogrula("APP_DB_PASSWORD", "a".repeat(11))).toThrow(
+      OrtamSirriHatasi,
+    );
+    expect(rolParolasiDogrula("APP_DB_PASSWORD", "a".repeat(12))).toBe("a".repeat(12));
+  });
+
+  it("tanımsız ve boş değer reddedilir", () => {
+    for (const deger of [undefined, null, "", "   "]) {
+      expect(() => rolParolasiDogrula("APP_DB_PASSWORD", deger)).toThrow(OrtamSirriHatasi);
+    }
+  });
+
+  it("hata mesajı parolanın KENDİSİNİ içermez", () => {
+    try {
+      rolParolasiDogrula("APP_DB_PASSWORD", "piravel_app");
+      throw new Error("atmalıydı");
+    } catch (e) {
+      expect((e as Error).message).not.toContain("piravel_app");
+    }
   });
 });
