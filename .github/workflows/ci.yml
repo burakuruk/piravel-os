@@ -33,8 +33,13 @@ jobs:
 
     env:
       DATABASE_ADMIN_URL: postgres://piravel:piravel@localhost:5432/piravel_os
-      DATABASE_URL: postgres://piravel_app:piravel_app@localhost:5432/piravel_os
-      APP_DB_PASSWORD: piravel_app
+      # ⚠ APP_DB_PASSWORD ve DATABASE_URL BURADA TANIMLANMAZ.
+      #
+      # Eskiden ikisi de `piravel_app` sabitiydi — yani rol adının kendisi.
+      # `src/lib/env.ts` ve `setup-db-roles.mjs` artık bilinen placeholder ve
+      # zayıf değerleri reddediyor ve bu adım haklı olarak düştü. Değer koşu
+      # başına üretilir (aşağıdaki adım); job seviyesinde tanımlanırsa
+      # $GITHUB_ENV ile üretilen değeri ezerdi.
       # Uçtan uca kontroller koşu-kapsamlı audit sorgularına dayanır. Kapı
       # NODE_ENV'e değil bu bayrağa bağlı olduğu için testler GERÇEK production
       # sunucusuna karşı koşabilir. Üretim ortamında ASLA set edilmez.
@@ -57,10 +62,16 @@ jobs:
       # BETTER_AUTH_SECRET'in kodda varsayılanı YOKTUR (src/lib/env.ts): eksikse
       # uygulama bilerek başlamaz. Değer koşu başına üretilir ve depoya yazılmaz —
       # workflow dosyasına sabit bir sır gömmek, onu herkese açık hâle getirirdi.
-      - name: Koşuya özel auth sırrı üret
+      - name: Koşuya özel sırlar ve DB parolası üret
         run: |
           echo "BETTER_AUTH_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" >> "$GITHUB_ENV"
           echo "INVITE_TOKEN_PEPPER=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")" >> "$GITHUB_ENV"
+          # Rol parolası da koşuya özel: base64url URL-güvenlidir, bağlantı
+          # dizesine kaçış gerektirmeden gömülür. DATABASE_URL aynı adımda
+          # yazılır — parola iki yerde yaşıyor, biri unutulursa uygulama açılmaz.
+          APP_DB_PASSWORD="$(node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))")"
+          echo "APP_DB_PASSWORD=$APP_DB_PASSWORD" >> "$GITHUB_ENV"
+          echo "DATABASE_URL=postgres://piravel_app:$APP_DB_PASSWORD@localhost:5432/piravel_os" >> "$GITHUB_ENV"
 
       - name: Typecheck (strict)
         run: npm run typecheck
