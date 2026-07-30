@@ -11,6 +11,8 @@ export interface MarkaHizmeti {
   serviceId: string;
   code: string;
   name: string;
+  /** Katalogdan gelir, burada salt okunur: hizmetin kapsamını hatırlatır. */
+  description: string | null;
   defaultUnit: string;
   isActive: boolean;
 }
@@ -105,6 +107,9 @@ export function MarkaHizmetleri({
                     <span className="text-ink-900">{h.name}</span>
                     {!h.isActive && <Badge variant="muted">Katalogda pasif</Badge>}
                   </div>
+                  {h.description && (
+                    <p className="mt-0.5 text-xs text-ink-600">{h.description}</p>
+                  )}
                   <div className="text-xs text-ink-400">Birim: {h.defaultUnit}</div>
                 </div>
                 {yonetebilir && (
@@ -141,7 +146,7 @@ export function MarkaHizmetleri({
                 value={secim}
                 onChange={(e) => setSecim(e.target.value)}
                 disabled={eklenebilir.length === 0}
-                className="w-full rounded-sm border border-line-300 bg-surface px-3 py-2 text-sm disabled:opacity-50"
+                className="max-sm:min-h-11 w-full rounded-sm border border-line-300 bg-surface px-3 py-2 text-sm disabled:opacity-50"
               >
                 <option value="">
                   {eklenebilir.length === 0 ? "Eklenebilecek hizmet yok" : "Hizmet seçin…"}

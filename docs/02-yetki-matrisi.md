@@ -63,6 +63,15 @@
   tablosuna eklenemez; aday aramasına da girmezler. Marka detayındaki "sorumlu
   ekip" yalnız açıkça atanmış OPS'u listeler — elle yazılmış bir SA/FIN satırı
   bile gösterilmez.
+- **Marka durum geçişlerinde ÖZEL BİR İŞ AKIŞI KISITI YOKTUR.** Beş durum
+  (`lead`, `proposal_sent`, `active`, `suspended`, `churned`) arasındaki tüm
+  geçişler serbesttir ve bu **bilinçli bir karardır**: ayrılmış bir markanın
+  geri dönmesi, yanlış işaretlenmiş bir durumun düzeltilmesi ve teklif
+  aşamasının atlanması gerçek hayatta oluyor. Durum makinesi kurmak, günlük
+  bir düzeltmeyi veritabanı müdahalesine çevirirdi. Kapı geçiş grafiği değil,
+  **yetki + step-up + denetim izidir**: aynı duruma tekrar geçiş idempotenttir
+  (200, veri değişmez) ve her başarılı değişiklik aktör ve istek kimliğiyle
+  `audit_logs`'a yazılır. `verify:brands` §14 bunların hepsini sabitler.
 - **Step-up gerektiren marka işlemleri:** marka durumu değişimi
   (`brand.status_change`), vergi bilgisi güncelleme (`brand.update_tax`),
   atama/kaldırma (`brand.assignment_change`), hizmet pasifleştirme

@@ -1108,6 +1108,128 @@ console.log("\n═══ 12. GERÇEK EKRANLAR — HTML kaynağı ve DOM ══�
   await sa.post(`/api/v1/brands/${markaA}/assignments`, { userId: opsId });
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 14. Marka durum geçişleri ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+{
+  /**
+   * Durum geçişinde ÖZEL BİR İŞ AKIŞI KISITI YOKTUR: beş durumun arasındaki
+   * tüm geçişler serbesttir (docs/02 §3.1). Bu bilinçli bir karardır —
+   * "ayrıldı" bir markanın geri dönmesi, yanlış işaretlenmiş bir durumun
+   * düzeltilmesi ve teklif aşamasının atlanması gerçek hayatta oluyor. Kapı
+   * durum makinesi değil, YETKİ ve STEP-UP.
+   */
+  const durumlar = ["lead", "proposal_sent", "active", "suspended", "churned"];
+
+  // ── Step-up olmadan reddedilir ──
+  await sql.query(
+    "DELETE FROM auth_reauthentication WHERE user_id = (SELECT id::text FROM users WHERE email = 'finance@example.com')",
+  );
+  const stepUpsuz = await fin.post(`/api/v1/brands/${markaB}/status`, { status: "suspended" });
+  const dokunulmamis = await sql.query("SELECT status FROM brands WHERE id = $1", [markaB]);
+  check(
+    "Step-up olmadan durum değişmez (403 SESSION_STALE)",
+    stepUpsuz.status === 403 && dokunulmamis.rows[0].status !== "suspended",
+    `HTTP ${stepUpsuz.status} · durum ${dokunulmamis.rows[0].status}`,
+  );
+
+  await stepUpAl(fin, finSecret);
+
+  // ── Geçersiz durum değeri ──
+  for (const gecersiz of ["", "aktif", "ACTIVE", "silindi", "'; DROP TABLE brands; --"]) {
+    const res = await fin.post(`/api/v1/brands/${markaB}/status`, { status: gecersiz });
+    check(
+      `Geçersiz durum reddedilir: ${JSON.stringify(gecersiz).slice(0, 24)}`,
+      res.status === 400,
+      `HTTP ${res.status}`,
+    );
+  }
+  const tabloDuruyor = await sql.query("SELECT count(*)::int AS n FROM brands");
+  check("Geçersiz denemeler tabloyu bozmadı", tabloDuruyor.rows[0].n > 0);
+
+  // ── İzin verilen tüm geçişler çalışır ──
+  let tumGecisler = true;
+  const hatalar = [];
+  for (const hedef of durumlar) {
+    const res = await fin.post(`/api/v1/brands/${markaB}/status`, { status: hedef });
+    const okunan = await sql.query("SELECT status FROM brands WHERE id = $1", [markaB]);
+    if (res.status !== 200 || okunan.rows[0].status !== hedef) {
+      tumGecisler = false;
+      hatalar.push(`${hedef}:HTTP${res.status}/${okunan.rows[0].status}`);
+    }
+  }
+  check(
+    "Beş durumun tamamına geçiş çalışıyor (özel iş akışı kısıtı YOK — bilinçli karar)",
+    tumGecisler,
+    hatalar.join(" ") || "lead→proposal_sent→active→suspended→churned",
+  );
+
+  // ── Aynı duruma tekrar geçiş: idempotent ──
+  const mevcut = (await sql.query("SELECT status FROM brands WHERE id = $1", [markaB])).rows[0]
+    .status;
+  const tekrar = await fin.post(`/api/v1/brands/${markaB}/status`, { status: mevcut });
+  const sonra = await sql.query("SELECT status FROM brands WHERE id = $1", [markaB]);
+  check(
+    "Aynı duruma tekrar geçiş idempotent (200, durum değişmez)",
+    tekrar.status === 200 && sonra.rows[0].status === mevcut,
+    `HTTP ${tekrar.status} · ${sonra.rows[0].status}`,
+  );
+
+  // ── Her başarılı değişiklik audit'e yazılır ──
+  const denetim = await sql.query(
+    `SELECT count(*)::int AS n FROM audit_logs
+      WHERE entity_type = 'brand' AND entity_id = $1
+        AND action = 'update' AND entity_label LIKE 'Marka durumu%'`,
+    [markaB],
+  );
+  check(
+    "Her başarılı durum değişikliği denetim izinde",
+    denetim.rows[0].n >= durumlar.length,
+    `${denetim.rows[0].n} kayıt`,
+  );
+  const aktorsuz = await sql.query(
+    `SELECT count(*)::int AS n FROM audit_logs
+      WHERE entity_type = 'brand' AND entity_id = $1 AND entity_label LIKE 'Marka durumu%'
+        AND (actor_email IS NULL OR request_id IS NULL)`,
+    [markaB],
+  );
+  check("Durum kayıtlarında aktör ve istek kimliği var", aktorsuz.rows[0].n === 0);
+
+  // ── Paralel iki değişiklik ──
+  const paralel = await Promise.all([
+    fin.post(`/api/v1/brands/${markaB}/status`, { status: "active" }),
+    fin.post(`/api/v1/brands/${markaB}/status`, { status: "suspended" }),
+  ]);
+  const sonDurum = await sql.query("SELECT status FROM brands WHERE id = $1", [markaB]);
+  check(
+    "Paralel iki durum değişikliği 500 üretmiyor",
+    paralel.every((r) => r.status < 500),
+    paralel.map((r) => r.status).join(","),
+  );
+  check(
+    "Paralel değişiklik sonrası durum GEÇERLİ bir değer (veri bozulmadı)",
+    durumlar.includes(sonDurum.rows[0].status),
+    sonDurum.rows[0].status,
+  );
+
+  // ── Rol matrisi ──
+  const opsDurum = await ops.post(`/api/v1/brands/${markaA}/status`, { status: "suspended" });
+  check("OPS durum değiştiremez (403)", opsDurum.status === 403, `HTTP ${opsDurum.status}`);
+  const memDurum = await mem.post(`/api/v1/brands/${markaA}/status`, { status: "suspended" });
+  check("MEM durum ucunda 404", memDurum.status === 404, `HTTP ${memDurum.status}`);
+
+  const opsSonrasi = await sql.query("SELECT status FROM brands WHERE id = $1", [markaA]);
+  check(
+    "OPS/MEM denemeleri markanın durumunu değiştirmedi",
+    opsSonrasi.rows[0].status === "active",
+    opsSonrasi.rows[0].status,
+  );
+
+  await stepUpAl(sa, saSecret);
+  const saDurum = await sa.post(`/api/v1/brands/${markaB}/status`, { status: "active" });
+  check("SA durum değiştirebiliyor", saDurum.status === 200, `HTTP ${saDurum.status}`);
+}
+
 // ── Özet ──────────────────────────────────────────────────────────────────
 const basarisiz = results.filter((r) => !r.ok);
 console.log(`\n${results.length - basarisiz.length}/${results.length} kontrol geçti`);

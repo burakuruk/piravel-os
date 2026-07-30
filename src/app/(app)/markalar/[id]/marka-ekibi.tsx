@@ -175,7 +175,7 @@ export function MarkaEkibi({
                   value={arama}
                   onChange={(e) => setArama(e.target.value)}
                   placeholder="Ad veya e-posta…"
-                  className="w-full rounded-sm border border-line-300 px-3 py-2 text-sm"
+                  className="max-sm:min-h-11 w-full rounded-sm border border-line-300 px-3 py-2 text-sm"
                 />
               </div>
               <Button type="submit">Ara</Button>
@@ -198,7 +198,8 @@ export function MarkaEkibi({
                     <ul className="space-y-2 text-sm">
                       {adaylar.map((k) => (
                         <li key={k.id} className="flex items-center justify-between gap-3">
-                          <label className="flex min-w-0 items-center gap-2">
+                          {/* Etiket radyoyla birlikte dokunulur; mobilde 44 px */}
+                          <label className="max-sm:min-h-11 flex min-w-0 flex-1 items-center gap-2">
                             <input
                               type="radio"
                               name="aday"

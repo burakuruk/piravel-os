@@ -47,6 +47,7 @@ export default async function HizmetlerPage() {
           id: String(h.id),
           code: String(h.code),
           name: String(h.name),
+          description: h.description ? String(h.description) : null,
           defaultUnit: String(h.defaultUnit ?? "—"),
           isActive: Boolean(h.isActive),
           kullananMarka: Number(h.kullananMarka ?? 0),

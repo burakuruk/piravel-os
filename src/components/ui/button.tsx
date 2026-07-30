@@ -15,9 +15,21 @@ const buttonVariants = cva(
         ghost: "text-navy-500 hover:bg-fill-100",
         destructive: "bg-danger text-white hover:opacity-90",
       },
+      /**
+       * ⚠ MOBİLDE DOKUNMA HEDEFİ EN AZ 44 px.
+       *
+       * `h-9` (36 px) ve tablo düğmesinin `h-7`si (28 px) fare için yeterli,
+       * parmak için değil: 28 px'lik bir hedefe basmaya çalışan kullanıcı
+       * komşu satırı tetikler. Yükseklik `max-sm` altında 44 px'e çıkar;
+       * masaüstünde yoğunluk korunur.
+       *
+       * Çözüm görünmez bir vurma alanı (`::after`) yerine gerçek yükseklik
+       * olarak kuruldu: iki komşu düğmenin görünmez alanları üst üste binerse
+       * kullanıcı gördüğü düğmeye basıp başka bir şey tetikleyebilir.
+       */
       size: {
-        default: "h-9 px-4",
-        table: "h-7 px-2 text-[13px]",
+        default: "max-sm:min-h-11 h-9 px-4",
+        table: "max-sm:min-h-11 max-sm:px-3 max-sm:text-sm h-7 px-2 text-[13px]",
       },
     },
     defaultVariants: { variant: "secondary", size: "default" },

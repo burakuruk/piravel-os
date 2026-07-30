@@ -62,7 +62,11 @@ export default async function MarkaDetayPage({
   return (
     <PageShell>
       <div className="mb-6">
-        <Link href="/markalar" className="text-sm text-navy-500 underline">
+        <Link
+          href="/markalar"
+          /* Geri bağlantısı da bir dokunma hedefidir: mobilde 44 px */
+          className="max-sm:min-h-11 inline-flex items-center text-sm text-navy-500 underline"
+        >
           ← Markalar
         </Link>
         <div className="mt-2 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -107,6 +111,7 @@ export default async function MarkaDetayPage({
               serviceId: String(h.serviceId),
               code: String(h.code),
               name: String(h.name),
+              description: h.description ? String(h.description) : null,
               defaultUnit: String(h.defaultUnit),
               isActive: Boolean(h.isActive),
             }))}

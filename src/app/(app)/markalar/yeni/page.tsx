@@ -22,7 +22,11 @@ export default async function YeniMarkaPage() {
   return (
     <PageShell>
       <div className="mb-6">
-        <Link href="/markalar" className="text-sm text-navy-500 underline">
+        <Link
+          href="/markalar"
+          /* Geri bağlantısı da bir dokunma hedefidir: mobilde 44 px */
+          className="max-sm:min-h-11 inline-flex items-center text-sm text-navy-500 underline"
+        >
           ← Markalar
         </Link>
         <h1 className="mt-2 font-display text-2xl font-semibold text-ink-900">Yeni marka</h1>

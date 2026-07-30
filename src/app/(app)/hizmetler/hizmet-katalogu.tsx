@@ -12,6 +12,8 @@ export interface Hizmet {
   id: string;
   code: string;
   name: string;
+  /** Boş bırakılabilir; katalogda ve marka detayında salt okunur görünür. */
+  description: string | null;
   defaultUnit: string;
   isActive: boolean;
   kullananMarka: number;
@@ -90,7 +92,12 @@ export function HizmetKatalogu({
    */
   function duzenlemeyeAl(h: Hizmet) {
     setDuzenlenen(h);
-    setForm({ code: h.code, name: h.name, defaultUnit: h.defaultUnit, description: "" });
+    setForm({
+      code: h.code,
+      name: h.name,
+      defaultUnit: h.defaultUnit,
+      description: h.description ?? "",
+    });
     setFormAcik(true);
     setMesaj(null);
     setHata(null);
@@ -143,6 +150,9 @@ export function HizmetKatalogu({
                       <div className="min-w-0">
                         <div className="font-mono text-xs text-ink-400">{h.code}</div>
                         <div className="mt-0.5 text-[15px] font-medium text-ink-900">{h.name}</div>
+                        {h.description && (
+                          <p className="mt-1 text-xs text-ink-600">{h.description}</p>
+                        )}
                       </div>
                       <Badge variant={h.isActive ? "success" : "muted"}>
                         {h.isActive ? "Aktif" : "Pasif"}
@@ -190,19 +200,28 @@ export function HizmetKatalogu({
                   <tbody>
                     {hizmetler.map((h) => (
                       <tr key={h.id} className="border-b border-line-200 last:border-0">
-                        <td className="px-4 py-3 font-mono text-xs text-ink-600">{h.code}</td>
-                        <td className="px-4 py-3 text-ink-900">{h.name}</td>
-                        <td className="px-4 py-3 text-ink-600">{h.defaultUnit}</td>
-                        <td className="px-4 py-3 text-right tabular-nums text-ink-600">
+                        <td className="px-4 py-3 align-top font-mono text-xs text-ink-600">
+                          {h.code}
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-ink-900">{h.name}</div>
+                          {h.description && (
+                            <p className="mt-0.5 max-w-[46ch] text-xs text-ink-600">
+                              {h.description}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 align-top text-ink-600">{h.defaultUnit}</td>
+                        <td className="px-4 py-3 text-right align-top tabular-nums text-ink-600">
                           {h.kullananMarka}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 align-top">
                           <Badge variant={h.isActive ? "success" : "muted"}>
                             {h.isActive ? "Aktif" : "Pasif"}
                           </Badge>
                         </td>
                         {yazabilir && (
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 align-top">
                             <div className="flex justify-end gap-2">
                               <Button size="table" onClick={() => setDuzenlenen(h)}>
                                 Düzenle
@@ -250,6 +269,12 @@ export function HizmetKatalogu({
                           body: JSON.stringify({
                             name: form.name.trim() || duzenlenen.name,
                             defaultUnit: form.defaultUnit,
+                            /**
+                             * Açıklama BOŞ GÖNDERİLEBİLİR: kullanıcı metni
+                             * silmek isteyebilir. Alanı "doluysa gönder"
+                             * yapmak, silmeyi imkânsız kılardı.
+                             */
+                            description: form.description,
                             // Kod ancak GEÇERLİ ve DEĞİŞMİŞSE gönderilir
                             ...(kodGecerli && kod !== duzenlenen.code ? { code: kod } : {}),
                           }),
@@ -296,6 +321,23 @@ export function HizmetKatalogu({
                     onChange={(e) => setForm((o) => ({ ...o, name: e.target.value }))}
                     className="w-full rounded-sm border border-line-300 px-3 py-2 text-sm"
                   />
+                </div>
+
+                <div>
+                  <label htmlFor="hz-aciklama" className="mb-1 block text-sm text-ink-600">
+                    Açıklama
+                  </label>
+                  <textarea
+                    id="hz-aciklama"
+                    rows={3}
+                    value={form.description}
+                    onChange={(e) => setForm((o) => ({ ...o, description: e.target.value }))}
+                    className="w-full rounded-sm border border-line-300 px-3 py-2 text-sm"
+                  />
+                  <p className="mt-1 text-xs text-ink-400">
+                    İsteğe bağlı. Hizmetin kapsamını satış ve operasyon
+                    tarafına anlatır; marka detayında da görünür.
+                  </p>
                 </div>
 
                 <div>

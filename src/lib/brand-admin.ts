@@ -940,6 +940,8 @@ export async function markaHizmetleri(brandId: string, role: UserRole) {
       serviceId: services.id,
       code: services.code,
       name: services.name,
+      /** Açıklama kataloğun tek doğruluk kaynağıdır; burada salt okunur gösterilir. */
+      description: services.description,
       defaultUnit: services.defaultUnit,
       isActive: services.isActive,
       listPriceMinor: services.listPriceMinor,

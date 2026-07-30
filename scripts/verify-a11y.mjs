@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import pg from "pg";
-import { totp } from "./_totp.mjs";
+import { tazeTotp } from "./_totp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // .env'i bağımlılıksız oku (Node 22 --env-file'a alternatif, cross-platform)
@@ -36,9 +36,18 @@ function check(name, ok, detail = "") {
 const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
 await sql.connect();
 
-const MAILS = ["finance@example.com", "member@example.com"];
+// admin: marka detayındaki dokunma hedefi ölçümü için (tüm işlemler görünür)
+const MAILS = ["finance@example.com", "member@example.com", "admin@example.com"];
 async function fixtureSifirla() {
   await sql.query("DELETE FROM auth_rate_limit");
+  /**
+   * ⚠ HESAP KİLİDİ DE TEMİZLENİR. Bir önceki koşudan kalan başarısız TOTP
+   * denemeleri hesabı 15 dakika kilitler; sonraki koşuda giriş 429 alır,
+   * kullanıcı 2FA kurulum ekranına düşer ve testler "sayfa boş" gibi
+   * görünen sahte hatalarla geçer.
+   */
+  await sql.query("DELETE FROM auth_security_state");
+  await sql.query("DELETE FROM auth_login_attempts");
   await sql.query(
     "DELETE FROM auth_two_factor WHERE user_id IN (SELECT id FROM auth_user WHERE email = ANY($1))",
     [MAILS],
@@ -80,7 +89,7 @@ async function oturumAc(page, email, needs2fa) {
   if (signIn.json?.twoFactorRedirect) {
     const secret = anahtarlar.get(email);
     if (!secret) throw new Error(`${email} için anahtar yok`);
-    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: totp(secret) });
+    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: await tazeTotp(secret) });
     return;
   }
   if (!needs2fa) return;
@@ -88,7 +97,7 @@ async function oturumAc(page, email, needs2fa) {
   if (enable.ok) {
     const secret = new URL(enable.json.totpURI).searchParams.get("secret");
     anahtarlar.set(email, secret);
-    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: totp(secret) });
+    await apiPost(page, "/api/auth/two-factor/verify-totp", { code: await tazeTotp(secret) });
   }
 }
 
@@ -343,6 +352,110 @@ try {
     );
     check("MEM kendi oturumlarını görebiliyor", memLinkleri.includes("/ayarlar/oturumlar"));
     await mem.close();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  console.log("\n═══ 5. Mobil dokunma hedefleri (marka detayı) ═══");
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    /**
+     * ⚠ ÖLÇÜLEN ŞEY SINIF ADI DEĞİL, GERÇEK KUTU.
+     *
+     * "max-sm:min-h-11 yazdım" demek yetmez: sınıf başka bir kuralla
+     * ezilebilir, bileşen başka bir `size` ile çağrılmış olabilir ya da
+     * Tailwind sürümü varyantı üretmemiş olabilir. Bu yüzden gerçek
+     * tarayıcıda `getBoundingClientRect()` okunur.
+     *
+     * Eşik 44 px (WCAG 2.5.5 / mobil dokunma hedefi). Yükseklik ölçütü
+     * belirleyicidir; genişlik metin uzunluğuyla zaten büyür.
+     */
+    const sa = await browser.newPage({ viewport: MOBIL, locale: "tr-TR" });
+    await oturumAc(sa, "admin@example.com", true);
+
+    const { rows: marka } = await sql.query(
+      "SELECT id FROM brands WHERE deleted_at IS NULL ORDER BY created_at LIMIT 1",
+    );
+    if (!marka[0]) {
+      check("Ölçüm için marka bulundu", false, "brands tablosu boş");
+    } else {
+      await sa.goto(`${BASE}/markalar/${marka[0].id}`, { waitUntil: "domcontentloaded" });
+      await sa.waitForSelector("h1");
+
+      /**
+       * ⚠ ÖNCE SAYFADA OLDUĞUMUZU KANITLA.
+       *
+       * Giriş sessizce başarısız olursa `/giris`e yönlenir; oradaki birkaç
+       * öğe eşiği zaten geçer ve ölçüm testi HİÇBİR ŞEY ÖLÇMEDEN "geçti"
+       * der. Boş bir taramanın yeşil görünmesi, testin en tehlikeli hâli.
+       */
+      const sayfaTamam = await sa.evaluate(() => ({
+        yol: location.pathname,
+        duzenle: document.querySelectorAll("main button").length,
+      }));
+      check(
+        "Marka detay sayfası SA olarak açıldı (ölçüm boşa düşmüyor)",
+        sayfaTamam.yol.startsWith("/markalar/") && sayfaTamam.duzenle >= 3,
+        `${sayfaTamam.yol} · ${sayfaTamam.duzenle} düğme`,
+      );
+
+      const kucukler = await sa.evaluate(() => {
+        const ESIK = 44;
+        const hedefler = document.querySelectorAll(
+          "main button, main select, main input:not([type=hidden]), main a",
+        );
+        const kucuk = [];
+        for (const el of hedefler) {
+          const k = el.getBoundingClientRect();
+          // Görünmeyen öğeler dokunma hedefi değildir
+          if (k.width === 0 || k.height === 0) continue;
+          if (k.height < ESIK) {
+            kucuk.push(`${el.tagName.toLowerCase()}:${(el.textContent ?? "").trim().slice(0, 18)}=${Math.round(k.height)}`);
+          }
+        }
+        return kucuk;
+      });
+
+      check(
+        "Marka detayındaki tüm dokunma hedefleri ≥44 px yüksekliğinde",
+        kucukler.length === 0,
+        kucukler.slice(0, 6).join(" · ") || "hepsi geçti",
+      );
+
+      // Adı geçen işlemler ayrı ayrı ölçülür: genel tarama bir gün gevşerse
+      // bu kontroller yine de düşer.
+      for (const etiket of ["Düzenle", "Kaldır", "Çıkar", "Birincil yap", "Ekle", "Ara"]) {
+        const dugme = sa.getByRole("button", { name: etiket, exact: true }).first();
+        const sayi = await dugme.count();
+        if (sayi === 0) continue;
+        const kutu = await dugme.boundingBox();
+        check(
+          `"${etiket}" dokunma hedefi ≥44 px`,
+          Boolean(kutu) && kutu.height >= 44,
+          `${Math.round(kutu?.height ?? 0)} px`,
+        );
+      }
+
+      const yatay = await sa.evaluate(() => ({
+        belge: document.documentElement.scrollWidth,
+        pencere: window.innerWidth,
+      }));
+      check(
+        "Marka detayında yatay taşma yok",
+        yatay.belge <= yatay.pencere,
+        `belge ${yatay.belge} px / pencere ${yatay.pencere} px`,
+      );
+
+      // Odak görünürlüğü: klavye kullanıcısı nerede olduğunu görmeli
+      await sa.keyboard.press("Tab");
+      const odakGorunur = await sa.evaluate(() => {
+        const el = document.activeElement;
+        if (!el || el === document.body) return false;
+        const s = getComputedStyle(el);
+        return s.outlineStyle !== "none" || s.boxShadow !== "none";
+      });
+      check("İlk Tab'da odak görünür bir hâlka bırakıyor", odakGorunur);
+    }
+    await sa.close();
   }
 
   await page.close();
