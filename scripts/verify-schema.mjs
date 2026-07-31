@@ -40,7 +40,7 @@ console.log("═══ 1. Migration geçmişi ═══");
   const { rows } = await sql.query(
     "SELECT count(*)::int AS n FROM drizzle.__drizzle_migrations",
   );
-  check("11 migration uygulanmış (0000–0010)", rows[0].n === 11, `${rows[0].n} kayıt`);
+  check("12 migration uygulanmış (0000–0011)", rows[0].n === 12, `${rows[0].n} kayıt`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

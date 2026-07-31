@@ -14,7 +14,15 @@ import type { RequestContext } from "@/lib/request-context";
  * TOTP sırrı buraya ASLA girmez — girse bile maskelenir.
  */
 
-export type YonetimEylemi = "create" | "update" | "delete" | "export";
+/**
+ * ⚠ `audit_action` ENUM'INA YENİ DEĞER EKLENMEZ.
+ *
+ * `restore` Sprint 3'te kullanıma girdi: aktivasyonda soft delete edilmiş bir
+ * `brand_services` bağlantısı canlandırıldığında yazılır. Enum'da zaten
+ * vardı; yeni bir migration gerekmedi. İşlemin NE olduğu `varlikTuru` +
+ * `degisiklikler.source` ile anlatılır.
+ */
+export type YonetimEylemi = "create" | "update" | "delete" | "restore" | "export";
 
 export interface YonetimAuditGirdisi {
   eylem: YonetimEylemi;
@@ -28,7 +36,9 @@ export interface YonetimAuditGirdisi {
     | "brand_contact"
     | "brand_service"
     | "brand_assignment"
-    | "service";
+    | "service"
+    | "contract"
+    | "contract_item";
   varlikId?: string | null;
   etiket: string;
   degisiklikler?: Record<string, unknown>;

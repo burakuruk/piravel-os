@@ -44,6 +44,17 @@ export const KRITIK_ISLEMLER = [
   "brand.update_tax",
   "brand.assignment_change",
   "service.deactivate",
+  /**
+   * Sözleşme yaşam döngüsü (Sprint 3).
+   *
+   * Üçü de geri alınamaz ve hukuki sonuç doğurur: aktivasyon belgeyi
+   * yürürlüğe sokar ve alanları kilitler; sonlandırma ve iptal geri
+   * alınamaz. **Taslak iptali de buraya dâhildir** — numara verilmiş bir
+   * belge iz bırakmadan yok edilmemeli.
+   */
+  "contract.activate",
+  "contract.end",
+  "contract.cancel",
   "bank_account.view_unmasked_iban",
   "allocation.reverse",
   "receivable.refund",

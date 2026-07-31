@@ -140,6 +140,9 @@ jobs:
       - name: Marka modülü — yetki, kapsam, CSV, soft delete, eşzamanlılık
         run: npm run verify:brands
 
+      - name: Sözleşme modülü — numara, tutar temeli, ödeme planı, hizmet bağlama
+        run: npm run verify:contracts
+
       # verify:a11y gerçek bir tarayıcıda klavye ve odak davranışını sınar;
       # pipeline'daki ilk Playwright adımı olduğu için tarayıcı burada kurulur.
       # Yalnız chromium: diğer motorlar bu testler için gereksiz indirme olurdu.

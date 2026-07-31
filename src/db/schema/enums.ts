@@ -28,6 +28,27 @@ export const pricingModel = pgEnum("pricing_model", [
   "installment",
 ]);
 
+/**
+ * Sözleşme tutarının NEYİ ifade ettiği (Sprint 3, migration 0011).
+ *
+ * `amount_minor` tek başına belirsizdi: "45.000 ₺ aylık" sözleşmede her ayın
+ * tutarı, "60.000 ₺ 3 taksit" sözleşmede toplam. Bu enum o belirsizliği
+ * kaldırır ve ödeme planı, CSV ve Sprint 4'ün üreticisi aynı satırdan aynı
+ * sonucu çıkarır.
+ *
+ * ⚠ Kolonun DB'de VARSAYILANI YOKTUR: alanı göndermeyen bir çağrı sessizce
+ * "dönemlik" sayılmaz, `VALIDATION` ile reddedilir.
+ */
+export const amountBasis = pgEnum("amount_basis", ["per_period", "contract_total"]);
+
+/** Faturalama takvimi — `pricing_model`'den farklı: o fiyatlandırma, bu takvim. */
+export const billingFrequency = pgEnum("billing_frequency", [
+  "one_time",
+  "monthly",
+  "quarterly",
+  "yearly",
+]);
+
 export const obligationStatus = pgEnum("obligation_status", [
   "draft",
   "pending",

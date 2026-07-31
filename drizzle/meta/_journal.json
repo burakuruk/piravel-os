@@ -78,6 +78,13 @@
       "when": 1785664800000,
       "tag": "0010_brand_module",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1785840000000,
+      "tag": "0011_contract_module",
+      "breakpoints": true
     }
   ]
 }

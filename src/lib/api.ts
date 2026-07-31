@@ -7,6 +7,14 @@ import {
   markayaErisebilirMi,
   markaYonetebilirMi,
 } from "@/lib/brand-admin";
+import {
+  finansGorebilirMi,
+  SozlesmeKuralHatasi,
+  sozlesmeModulunuGorebilirMi,
+  sozlesmeSilebilirMi,
+  sozlesmeyeErisebilirMi,
+  sozlesmeYonetebilirMi,
+} from "@/lib/contract-admin";
 import { getCurrentUser, type CurrentUser } from "@/lib/authz";
 import { requireStepUp, StepUpGerekli, type KritikIslem } from "@/lib/step-up";
 import { IsKuraliHatasi, kullaniciListesiniGorebilirMi, kullaniciYonetebilirMi } from "@/lib/user-admin";
@@ -123,6 +131,61 @@ export async function hizmetYonetenKullanici(): Promise<CurrentUser> {
  */
 export async function erisilebilirMarka(user: CurrentUser, brandId: string): Promise<void> {
   if (!(await markayaErisebilirMi(user, brandId))) throw new RotaHatasi(YOK());
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Sözleşme modülü kapıları (Sprint 3)
+// ══════════════════════════════════════════════════════════════════════════
+
+/** Sözleşmeleri OKUYABİLEN roller (SA/FIN/OPS). MEM → 404 (marka ile aynı ilke). */
+export async function sozlesmeOkuyabilenKullanici(): Promise<CurrentUser> {
+  const user = await oturumluKullanici();
+  if (!sozlesmeModulunuGorebilirMi(user.role)) throw new RotaHatasi(YOK());
+  return user;
+}
+
+/**
+ * Sözleşme YAZMA (SA/FIN).
+ *
+ * OPS 403 alır, 404 değil: modülü zaten görüyor, ucun varlığı sır değil.
+ * MEM yine 404 görür.
+ */
+export async function sozlesmeYonetenKullanici(): Promise<CurrentUser> {
+  const user = await sozlesmeOkuyabilenKullanici();
+  if (!sozlesmeYonetebilirMi(user.role)) {
+    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
+  }
+  return user;
+}
+
+/** Sözleşme SİLME — yalnız SA; FIN ve OPS 403 görür. */
+export async function sozlesmeSilenKullanici(): Promise<CurrentUser> {
+  const user = await sozlesmeOkuyabilenKullanici();
+  if (!sozlesmeSilebilirMi(user.role)) {
+    throw new RotaHatasi(hataYanit("FORBIDDEN", "Bu işlem için yetkiniz yok", 403));
+  }
+  return user;
+}
+
+/**
+ * Finansal uçlar (ödeme planı önizlemesi) — SA/FIN.
+ *
+ * OPS burada 404 alır, 403 değil: bu uç TAMAMEN finansal bir kaynaktır ve
+ * OPS için varlığı da anlamsızdır. 403, "sözleşmenin bir ödeme planı var"
+ * bilgisini sızdırırdı.
+ */
+export async function finansOkuyabilenKullanici(): Promise<CurrentUser> {
+  const user = await sozlesmeOkuyabilenKullanici();
+  if (!finansGorebilirMi(user.role)) throw new RotaHatasi(YOK());
+  return user;
+}
+
+/** Sözleşme kapsam kapısı — kapsam dışı sözleşme YOK gibi davranır. */
+export async function erisilebilirSozlesme(
+  user: CurrentUser,
+  contractId: string,
+): Promise<void> {
+  if (!(await sozlesmeyeErisebilirMi(user, contractId))) throw new RotaHatasi(YOK());
 }
 
 /** Kritik işlem kapısı — yükseltme yoksa 403 SESSION_STALE. */
@@ -247,7 +310,35 @@ export function isKuraliYaniti(e: unknown): Response | null {
     return hataYanit(e.code, e.message, durum);
   }
   if (e instanceof MarkaKuralHatasi) return hataYanit(e.code, e.message, markaDurumu(e.code));
+  if (e instanceof SozlesmeKuralHatasi) {
+    return hataYanit(e.code, e.message, sozlesmeDurumu(e.code));
+  }
   return null;
+}
+
+/**
+ * Sözleşme iş kuralı → HTTP.
+ *
+ * 422: istek biçimsel olarak doğru ama iş kuralı reddediyor — istemcinin
+ * gövdeyi düzelterek tekrar denemesi anlamsızdır (kilitli alan, geçersiz
+ * geçiş, uygun olmayan marka, pasif hizmet, çok uzun plan). 409: numara
+ * çakışması. 400: gövde hatalı.
+ */
+function sozlesmeDurumu(code: SozlesmeKuralHatasi["code"]): number {
+  switch (code) {
+    case "CONTRACT_NOT_FOUND":
+      return 404;
+    case "CONTRACT_NO_TAKEN":
+      return 409;
+    case "CONTRACT_LOCKED":
+    case "INVALID_TRANSITION":
+    case "BRAND_NOT_ACTIVATABLE":
+    case "SERVICE_INACTIVE":
+    case "PREVIEW_TOO_LONG":
+      return 422;
+    default:
+      return 400;
+  }
 }
 
 /**

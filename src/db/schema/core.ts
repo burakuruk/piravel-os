@@ -16,7 +16,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { brandStatus, billingType, contractStatus, pricingModel, recurrenceFrequency, obligationTarget, userRole } from "./enums";
+import { amountBasis, billingFrequency, brandStatus, billingType, contractStatus, pricingModel, recurrenceFrequency, obligationTarget, userRole } from "./enums";
 import { auditCols, idCol } from "./helpers";
 
 // ── 3.1 currencies ──
@@ -267,10 +267,28 @@ export const contracts = pgTable(
     pricingModel: pricingModel("pricing_model").notNull().default("fixed_monthly"),
     startDate: date("start_date").notNull(),
     endDate: date("end_date"),
+    /** GERÇEK yenileme: yeni dönemin başladığı gün. `end_date`'ten SONRA olmalı. */
     renewalDate: date("renewal_date"),
+    /**
+     * Yenileme GÖRÜŞMESİ / hatırlatma günü (0011).
+     *
+     * `renewalDate` ile karıştırılmamalı: 31.03.2027'de biten bir sözleşmede
+     * 15.09.2026 yenileme tarihi değil, görüşme günüdür. Rozet ve Sprint 6
+     * bildirimi hangi alan doluysa ona dayanır.
+     */
+    renewalReviewDate: date("renewal_review_date"),
     autoRenew: boolean("auto_renew").notNull().default(false),
-    // Dönem başına, KDV hariç, indirim sonrası net tutar — TEK DOĞRULUK KAYNAĞI
+    // KDV hariç, indirim sonrası NET tutar — TEK DOĞRULUK KAYNAĞI.
+    // Neyi ifade ettiğini `amountBasis` söyler; ikisi birlikte okunur.
     amountMinor: bigint("amount_minor", { mode: "number" }).notNull(),
+    /**
+     * Tutarın temeli — VARSAYILANI YOK (0011).
+     *
+     * Kalıcı bir DEFAULT, alanı göndermeyen bir çağrıyı sessizce "dönemlik"
+     * saymak demekti; tam da kaçınmak istediğimiz belirsizlik. Eksikse uç
+     * `VALIDATION` döner.
+     */
+    amountBasis: amountBasis("amount_basis").notNull(),
     currencyCode: char("currency_code", { length: 3 }).notNull().references(() => currencies.code),
     fxRate: numeric("fx_rate", { precision: 18, scale: 8 }).notNull().default("1"),
     amountBaseMinor: bigint("amount_base_minor", { mode: "number" }).notNull(),
@@ -284,17 +302,43 @@ export const contracts = pgTable(
     nextPriceReviewDate: date("next_price_review_date"),
     terminationTerms: text("termination_terms"),
     notes: text("notes"),
+    // ── Faturalama takvimi (0011) ──
+    billingFrequency: billingFrequency("billing_frequency").notNull().default("monthly"),
+    billingInterval: smallint("billing_interval").notNull().default(1),
+    firstDueDate: date("first_due_date"),
+    installmentCount: integer("installment_count"),
+    // ── Yaşam döngüsü ──
     activatedAt: timestamp("activated_at", { withTimezone: true }),
     endedAt: timestamp("ended_at", { withTimezone: true }),
     endReason: text("end_reason"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
     ...auditCols,
   },
   (t) => [
-    uniqueIndex("uq_contracts_no").on(t.contractNo).where(sql`${t.deletedAt} IS NULL`),
+    /**
+     * ⚠ Kısmi DEĞİL: numara yeniden kullanılmaz. Soft delete edilmiş bir
+     * sözleşmenin numarası da rezerve kalır (0011).
+     */
+    uniqueIndex("uq_contracts_no").on(t.contractNo),
     index("idx_contracts_brand").on(t.brandId).where(sql`${t.deletedAt} IS NULL`),
     index("idx_contracts_end_date").on(t.endDate).where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
+    index("idx_contracts_renewal").on(t.renewalDate).where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
+    index("idx_contracts_renewal_review").on(t.renewalReviewDate).where(sql`${t.status} = 'active' AND ${t.deletedAt} IS NULL`),
   ],
 );
+
+/**
+ * Sözleşme numarası sayacı (0011).
+ *
+ * `max(no)+1` deseni iki eşzamanlı istekte aynı numarayı üretirdi. Sayaç satırı
+ * `ON CONFLICT DO UPDATE` ile kilitlenir ve YALNIZ İLERİ gider — silinen bir
+ * taslağın numarası geri verilmez.
+ */
+export const contractNoSeq = pgTable("contract_no_seq", {
+  year: integer("year").primaryKey(),
+  lastNo: integer("last_no").notNull(),
+});
 
 // ── 7.2 contract_items (kapsam sözleşmesi — faturalamaya girmez) ──
 export const contractItems = pgTable(

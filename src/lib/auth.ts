@@ -191,12 +191,28 @@ export const auth = betterAuth({
 
       if (path.startsWith("/two-factor/verify")) {
         const user = ctx.context.newSession?.user;
+        const mevcut = ctx.context.session?.user;
         const tur = path.includes("backup-code") ? "recovery_code" : "totp";
+        /**
+         * ⚠ BAŞARI `newSession` İLE ÖLÇÜLEMEZ.
+         *
+         * Giriş akışında ikinci adım YENİ bir oturum kurar, dolayısıyla
+         * `newSession` dolar. Ama aynı doğrulama STEP-UP'tan (`/api/v1/reauth`)
+         * çağrıldığında kullanıcının oturumu ZATEN vardır ve yeni oturum
+         * oluşmaz. `Boolean(user)` ölçütüyle DOĞRU kod bile "başarısız"
+         * sayılıyordu: beş meşru kritik işlemden sonra TOTP sayacı eşiğe
+         * ulaşıp hesabı 15 dakika kilitliyor, denetime de sahte
+         * `login_failed` satırları düşüyordu.
+         *
+         * Ölçüt yanıtın kendisidir: Better Auth başarısız doğrulamada
+         * `returned` içine bir `APIError` koyar.
+         */
+        const basarili = !(ctx.context.returned instanceof Error);
         await ikinciAdimSonrasi(
-          user?.id ?? ctx.context.session?.user?.id ?? null,
-          user?.email ?? "",
+          user?.id ?? mevcut?.id ?? null,
+          user?.email ?? mevcut?.email ?? "",
           tur,
-          Boolean(user),
+          basarili,
           ctx.headers,
         );
         return;

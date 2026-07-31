@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, inArray, isNull, notExists, or, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { db, type Db } from "@/db";
 import {
   auditLogs,
@@ -239,7 +240,7 @@ export function markaGuncellemeAlanlariniSuz(
  * OPS    → brand_assignments alt sorgusu (yalnız canlı atamalar)
  * MEM    → asla eşleşmeyen koşul; çağıran zaten 404 döner
  */
-export function markaKapsamKosulu(user: CurrentUser, brandIdCol = brands.id) {
+export function markaKapsamKosulu(user: CurrentUser, brandIdCol: AnyPgColumn = brands.id) {
   if (user.role === "super_admin" || user.role === "finance") return undefined;
   if (user.role === "member") return sql`false`;
   return inArray(

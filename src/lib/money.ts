@@ -106,6 +106,34 @@ export function extractNetFromGross(grossMinor: number, vatRatePercent: number):
   return Math.round(grossMinor / (1 + vatRatePercent / 100));
 }
 
+/**
+ * Bir tutarı n parçaya böler — KURUŞ KAYBI OLMADAN (Sprint 3, plan §3e-1).
+ *
+ * `taban = T / n` (tam bölme), kalan **SON parçaya** yüklenir. Böylece
+ * `Σ parça === T` her zaman doğrudur.
+ *
+ * Neden son parça: ilk taksit çoğu zaman müşteriyle konuşulan/teklifte yazan
+ * rakamdır; kuruş farkını oraya koymak ilk faturada açıklama gerektirir. Son
+ * taksit kapanış kalemidir, fark orada doğaldır.
+ *
+ * ⚠ Bölme burada yapılır, çağıranda değil: `Math.floor(T/n)` çağıranlara
+ * dağılırsa biri `Math.round` yazar ve toplam sessizce kayar.
+ */
+export function allocateMinor(totalMinor: number, parts: number): number[] {
+  assertMinor(totalMinor);
+  if (!Number.isSafeInteger(parts) || parts < 1) {
+    throw new RangeError(`Parça sayısı en az 1 tam sayı olmalıdır: ${parts}`);
+  }
+  if (totalMinor < 0) {
+    throw new RangeError(`Dağıtılacak tutar negatif olamaz: ${totalMinor}`);
+  }
+  const taban = Math.floor(totalMinor / parts);
+  const kalan = totalMinor - taban * parts;
+  const out = new Array<number>(parts).fill(taban);
+  out[parts - 1] = taban + kalan;
+  return out;
+}
+
 const SYMBOLS: Record<string, string> = { TRY: "₺", USD: "$", EUR: "€" };
 
 /**
