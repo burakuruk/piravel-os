@@ -86,6 +86,40 @@ const shots = [
   { file: "74-w-hizmet-katalogu-mobil-375x950.png", path: "/wireframe/hizmet-katalogu", w: 375, h: 950 },
   { file: "75-w-marka-ekip-atama-mobil-375x1100.png", path: "/wireframe/marka-ekip-atama", w: 375, h: 1100 },
 
+  /**
+   * ── Sprint 3 wireframe'leri (onay öncesi) ──
+   *
+   * Ortak `w3` eki: `SCREENSHOT_FILTER=w3` ile yalnız bu 18 kare çekilir.
+   * Oturum gerektirmez — /wireframe public prefix'te.
+   *
+   * Mobil yükseklikler içerikten bilerek büyük tutuldu: kare `fullPage`
+   * değil viewport çekimidir, kısa viewport içeriği keser.
+   */
+  { file: "110-w3-sozlesme-listesi-1440x860.png", path: "/wireframe/sozlesme-listesi", w: 1440, h: 860 },
+  { file: "111-w3-sozlesme-yeni-1440x2020.png", path: "/wireframe/sozlesme-yeni", w: 1440, h: 2020 },
+  { file: "112-w3-sozlesme-detay-1440x1240.png", path: "/wireframe/sozlesme-detay", w: 1440, h: 1240 },
+  { file: "113-w3-sozlesme-kalemler-1440x990.png", path: "/wireframe/sozlesme-kalemler", w: 1440, h: 990 },
+  { file: "114-w3-aktivasyon-stepup-1440x1110.png", path: "/wireframe/sozlesme-aktivasyon", w: 1440, h: 1110 },
+  { file: "115-w3-sonlandirma-iptal-1440x1200.png", path: "/wireframe/sozlesme-sonlandirma", w: 1440, h: 1200 },
+  { file: "116-w3-odeme-plani-1440x2630.png", path: "/wireframe/odeme-plani", w: 1440, h: 2630 },
+  { file: "117-w3-liste-durumlar-1440x1040.png", path: "/wireframe/sozlesme-liste-durumlar", w: 1440, h: 1040 },
+  { file: "118-w3-sozlesme-ops-1440x960.png", path: "/wireframe/sozlesme-ops", w: 1440, h: 960 },
+  // REVİZE 3 ile eklenen iki ekran
+  { file: "119-w3-yenileme-karti-1440x930.png", path: "/wireframe/sozlesme-yenileme", w: 1440, h: 930 },
+  { file: "120-w3-hizmet-baglama-1440x1710.png", path: "/wireframe/sozlesme-hizmet-baglama", w: 1440, h: 1710 },
+
+  { file: "130-w3-sozlesme-listesi-mobil-375x1550.png", path: "/wireframe/sozlesme-listesi", w: 375, h: 1550 },
+  { file: "131-w3-sozlesme-yeni-mobil-375x2860.png", path: "/wireframe/sozlesme-yeni", w: 375, h: 2860 },
+  { file: "132-w3-sozlesme-detay-mobil-375x2680.png", path: "/wireframe/sozlesme-detay", w: 375, h: 2680 },
+  { file: "133-w3-sozlesme-kalemler-mobil-375x1840.png", path: "/wireframe/sozlesme-kalemler", w: 375, h: 1840 },
+  { file: "134-w3-aktivasyon-stepup-mobil-375x1940.png", path: "/wireframe/sozlesme-aktivasyon", w: 375, h: 1940 },
+  { file: "135-w3-sonlandirma-iptal-mobil-375x2280.png", path: "/wireframe/sozlesme-sonlandirma", w: 375, h: 2280 },
+  { file: "136-w3-odeme-plani-mobil-375x4200.png", path: "/wireframe/odeme-plani", w: 375, h: 4200 },
+  { file: "137-w3-liste-durumlar-mobil-375x1180.png", path: "/wireframe/sozlesme-liste-durumlar", w: 375, h: 1180 },
+  { file: "138-w3-sozlesme-ops-mobil-375x1660.png", path: "/wireframe/sozlesme-ops", w: 375, h: 1660 },
+  { file: "139-w3-yenileme-karti-mobil-375x1730.png", path: "/wireframe/sozlesme-yenileme", w: 375, h: 1730 },
+  { file: "140-w3-hizmet-baglama-mobil-375x2010.png", path: "/wireframe/sozlesme-hizmet-baglama", w: 375, h: 2010 },
+
   // ── Sprint 1: GERÇEK ekranlar (wireframe değil) ──
   { file: "20-giris-gercek-1440x900.png", path: "/giris", w: 1440, h: 900 },
   { file: "21-giris-gercek-mobil-375x812.png", path: "/giris", w: 375, h: 812 },
