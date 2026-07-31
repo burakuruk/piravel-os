@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { totp } from "./_totp.mjs";
+import { tazeTotp, totp } from "./_totp.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // .env'i bağımlılıksız oku (Node 22 --env-file'a alternatif, cross-platform)
@@ -286,6 +286,141 @@ console.log("\n═══ 9. Sır sızıntısı (bu koşu) ═══");
     "SELECT count(*)::int AS n FROM auth_reauthentication WHERE method NOT IN ('password','password_totp')",
   );
   check("Yükseltme kayıtlarında yalnız yöntem adı var", reauth[0].n === 0);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 10. REGRESYON: başarılı step-up hesabı KİLİTLEMEZ ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠ GERÇEK BİR HATANIN KALICI TESTİ (Sprint 3'te bulundu).
+ *
+ * `auth.ts`'teki `after` kancası ikinci adım doğrulamasının başarısını
+ * `ctx.context.newSession` ile ölçüyordu. Giriş akışında ikinci adım YENİ bir
+ * oturum kurar, ama aynı doğrulama STEP-UP'tan çağrıldığında kullanıcının
+ * oturumu ZATEN vardır ve yeni oturum oluşmaz. Sonuç: DOĞRU kodla yapılan
+ * her step-up "başarısız" sayılıyor, TOTP sayacı artıyor ve **beş meşru
+ * kritik işlemden sonra hesap 15 dakika kilitleniyordu**. Denetime de sahte
+ * `login_failed` satırları düşüyordu.
+ *
+ * Buradaki senaryolar hem düzeltmeyi hem de korumanın HÂLÂ ÇALIŞTIĞINI
+ * sabitler — biri olmadan diğeri anlamsız.
+ */
+{
+  const mail = "member@example.com";
+  const uid = (
+    await sql.query("SELECT id::text AS id FROM users WHERE email = $1", [mail])
+  ).rows[0].id;
+
+  const sayac = async () => {
+    const { rows } = await sql.query(
+      "SELECT totp_failed_count, totp_locked_until FROM auth_security_state WHERE user_id = $1",
+      [uid],
+    );
+    return {
+      adet: rows[0]?.totp_failed_count ?? 0,
+      kilit: rows[0]?.totp_locked_until ?? null,
+    };
+  };
+  const loginFailedSayisi = async () =>
+    (
+      await sql.query(
+        "SELECT count(*)::int AS n FROM audit_logs WHERE test_run_id = $1 AND action = 'login_failed' AND actor_id = $2",
+        [RUN_ID, uid],
+      )
+    ).rows[0].n;
+
+  // Temiz başlangıç
+  await sql.query("DELETE FROM auth_security_state WHERE user_id = $1", [uid]);
+  await sql.query("DELETE FROM auth_login_attempts");
+  await sql.query("DELETE FROM auth_rate_limit");
+
+  const m = client();
+  await m.post("/api/auth/sign-in/email", { email: mail, password: PAROLA });
+  const enable = await m.post("/api/auth/two-factor/enable", { password: PAROLA });
+  const secret = new URL(enable.json.totpURI).searchParams.get("secret");
+  await m.post("/api/auth/two-factor/verify-totp", { code: await tazeTotp(secret) });
+
+  await sql.query("DELETE FROM auth_security_state WHERE user_id = $1", [uid]);
+  const auditBaslangic = await loginFailedSayisi();
+
+  // ── Art arda 6 BAŞARILI step-up (eşik 5; hata varken 5'te kilitlenirdi) ──
+  const TUR = 6;
+  let hepsiBasarili = true;
+  let sayacHepBos = true;
+  let kilitHicOlusmadi = true;
+  for (let i = 1; i <= TUR; i += 1) {
+    await sql.query("DELETE FROM auth_rate_limit");
+    const r = await m.post("/api/v1/reauth", {
+      password: PAROLA,
+      totpCode: await tazeTotp(secret),
+    });
+    if (r.status !== 200) hepsiBasarili = false;
+    const s = await sayac();
+    if (s.adet !== 0) sayacHepBos = false;
+    if (s.kilit !== null) kilitHicOlusmadi = false;
+  }
+
+  check(`${TUR} art arda step-up'ın hepsi başarılı (HTTP 200)`, hepsiBasarili);
+  check("her başarılı işlemden sonra totp_failed_count = 0", sayacHepBos);
+  check("hiçbir noktada totp_locked_until oluşmadı", kilitHicOlusmadi);
+  check(
+    "başarılı step-up'lar login_failed audit kaydı ÜRETMİYOR",
+    (await loginFailedSayisi()) === auditBaslangic,
+    `${auditBaslangic} → ${await loginFailedSayisi()}`,
+  );
+
+  // ── Yanlış kod sayacı artırır ──
+  await sql.query("DELETE FROM auth_rate_limit");
+  const yanlis = await m.post("/api/v1/reauth", { password: PAROLA, totpCode: "000000" });
+  const yanlisSonrasi = await sayac();
+  check(
+    "bilerek yanlış kod reddediliyor ve sayacı 1 yapıyor",
+    yanlis.status === 401 && yanlisSonrasi.adet === 1,
+    `HTTP ${yanlis.status}, sayaç ${yanlisSonrasi.adet}`,
+  );
+
+  // ── Sonraki doğru kod sayacı sıfırlar ──
+  await sql.query("DELETE FROM auth_rate_limit");
+  const dogru = await m.post("/api/v1/reauth", {
+    password: PAROLA,
+    totpCode: await tazeTotp(secret),
+  });
+  const dogruSonrasi = await sayac();
+  check(
+    "sonraki doğru kod sayacı tekrar 0 yapıyor",
+    dogru.status === 200 && dogruSonrasi.adet === 0,
+    `HTTP ${dogru.status}, sayaç ${dogruSonrasi.adet}`,
+  );
+
+  // ── Koruma HÂLÂ çalışıyor: 5 gerçek yanlış deneme kilitler ──
+  let sonYanlis = null;
+  for (let i = 0; i < 5; i += 1) {
+    await sql.query("DELETE FROM auth_rate_limit");
+    sonYanlis = await m.post("/api/v1/reauth", { password: PAROLA, totpCode: "000000" });
+  }
+  const kilitli = await sayac();
+  check(
+    "5 gerçek yanlış denemede kilit UYGULANIYOR (koruma duruyor)",
+    kilitli.adet === 5 && kilitli.kilit !== null,
+    `sayaç ${kilitli.adet}, kilit ${kilitli.kilit ?? "yok"}`,
+  );
+
+  // Kilitliyken doğru kod da geçmemeli
+  await sql.query("DELETE FROM auth_rate_limit");
+  const kilitliDogru = await m.post("/api/v1/reauth", {
+    password: PAROLA,
+    totpCode: await tazeTotp(secret),
+  });
+  check(
+    "kilitliyken doğru kod da kabul edilmiyor",
+    kilitliDogru.status !== 200,
+    `HTTP ${kilitliDogru.status}`,
+  );
+  void sonYanlis;
+
+  // Sonraki koşuları etkilemesin
+  await sql.query("DELETE FROM auth_security_state WHERE user_id = $1", [uid]);
+  await sql.query("DELETE FROM auth_login_attempts");
 }
 
 await sifirlaFixture();
