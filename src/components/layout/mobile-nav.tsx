@@ -101,7 +101,9 @@ export function MobileNav({ role, fullName }: { role: UserRole; fullName: string
         aria-label="Menüyü aç"
         aria-expanded={open}
         aria-controls="mobil-menu"
-        className="hidden h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100 max-lg:flex"
+        /* ⚠ Menü düğmesi mobilde en çok kullanılan hedeftir; 36 px parmak için
+           yetersiz (06 §15). Masaüstünde zaten görünmüyor. */
+        className="max-sm:min-h-11 max-sm:min-w-11 hidden h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100 max-lg:flex"
       >
         <Menu size={19} strokeWidth={1.75} />
       </button>

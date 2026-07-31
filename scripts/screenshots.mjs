@@ -407,6 +407,21 @@ async function markaFixtureleri() {
   );
   await sql.query("DELETE FROM services WHERE code LIKE 'DGH%'");
 
+  /**
+   * ⚠ SÖZLEŞMELER ÖNCE DÜŞER. `contracts.brand_id` 0011'de CASCADE'den
+   * RESTRICT'e çekildi (geçmiş sessizce silinmesin); markayı önce silmeye
+   * kalkan ikinci koşu FK ihlaliyle patlıyordu.
+   */
+  await sql.query(
+    `DELETE FROM contract_items WHERE contract_id IN (
+       SELECT id FROM contracts WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1)))`,
+    [kodlar],
+  );
+  await sql.query(
+    "DELETE FROM contracts WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1))",
+    [kodlar],
+  );
+
   // FK'ler RESTRICT: çocuklar önce düşer
   await sql.query(
     "DELETE FROM brand_assignments WHERE brand_id IN (SELECT id FROM brands WHERE code = ANY($1))",
@@ -527,12 +542,137 @@ async function markaFixtureleri() {
   await olay("Marka oluşturuldu", "admin@example.com", 130);
 
   await sql.end();
-  return { svz };
+  return { svz, hizmetIdler: { sm, seo, pr } };
+}
+
+/**
+ * Sözleşme modülünün GÖRSEL fixture'ı (Sprint 3).
+ *
+ * ⚠ Yalnız sahte veri. Numaralar `PRV-2026-90xx` aralığında sabit tutulur ki
+ * her koşuda AYNI ekran üretilsin; `next_contract_no()` sayacı ilerletirdi ve
+ * görseller koşudan koşuya değişirdi.
+ */
+async function sozlesmeFixtureleri(brandId, hizmetIdler) {
+  const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
+  await sql.connect();
+
+  await sql.query(
+    "DELETE FROM contract_items WHERE contract_id IN (SELECT id FROM contracts WHERE contract_no LIKE 'PRV-2026-90%')",
+  );
+  await sql.query("DELETE FROM contracts WHERE contract_no LIKE 'PRV-2026-90%'");
+
+  const soz = async (no, title, status, uzer = {}) => {
+    const d = {
+      amount_minor: 4_500_000,
+      amount_basis: "per_period",
+      billing_frequency: "monthly",
+      billing_interval: 1,
+      start_date: "2026-04-01",
+      end_date: "2027-03-31",
+      first_due_date: "2026-04-30",
+      payment_day: 31,
+      installment_count: null,
+      discount_minor: 100_000,
+      renewal_review_date: null,
+      renewal_date: null,
+      payment_method: "Havale / EFT",
+      notes: null,
+      activated_at: null,
+      ended_at: null,
+      end_reason: null,
+      cancelled_at: null,
+      cancel_reason: null,
+      ...uzer,
+    };
+    const { rows } = await sql.query(
+      `INSERT INTO contracts (brand_id, contract_no, title, status, start_date, end_date,
+         renewal_date, renewal_review_date, amount_minor, amount_basis, currency_code,
+         amount_base_minor, vat_rate, discount_minor, billing_frequency, billing_interval,
+         first_due_date, installment_count, payment_day, payment_method, notes,
+         activated_at, ended_at, end_reason, cancelled_at, cancel_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'TRY',$9,'20.00',$11,$12,$13,$14,$15,$16,$17,$18,
+               $19,$20,$21,$22,$23)
+       RETURNING id`,
+      [brandId, no, title, status, d.start_date, d.end_date, d.renewal_date,
+       d.renewal_review_date, d.amount_minor, d.amount_basis, d.discount_minor,
+       d.billing_frequency, d.billing_interval, d.first_due_date, d.installment_count,
+       d.payment_day, d.payment_method, d.notes, d.activated_at, d.ended_at, d.end_reason,
+       d.cancelled_at, d.cancel_reason],
+    );
+    return rows[0].id;
+  };
+
+  const kalem = async (contractId, serviceId, ad, fiyat) => {
+    await sql.query(
+      `INSERT INTO contract_items (contract_id, service_id, name, quantity, unit, period,
+         unit_price_minor, currency_code, total_minor, sort_order)
+       VALUES ($1,$2,$3,1,'Aylık','monthly',$4,'TRY',$4,1)`,
+      [contractId, serviceId, ad, fiyat],
+    );
+  };
+
+  // Yürürlükteki sözleşme — detay, ödeme planı, sonlandırma/iptal görselleri
+  const aktif = await soz("PRV-2026-9001", "Sosyal medya yönetimi 2026", "active", {
+    activated_at: "2026-04-01T10:12:00+03",
+    renewal_review_date: "2026-09-15",
+    renewal_date: "2027-04-01",
+    notes: "Görsel üretimi ayrı teklif edilecek.",
+  });
+  await kalem(aktif, hizmetIdler.sm, "Sosyal medya yönetimi", 3_000_000);
+  await kalem(aktif, hizmetIdler.seo, "Arama motoru optimizasyonu", 1_000_000);
+  await kalem(aktif, hizmetIdler.pr, "Basın ilişkileri", 600_000);
+
+  // Taslak — kalem düzenleme ve aktivasyon görselleri
+  const taslak = await soz("PRV-2026-9002", "SEO ve içerik üretimi", "draft", {
+    amount_minor: 1_850_000,
+    start_date: "2026-08-01",
+    end_date: "2027-07-31",
+    first_due_date: "2026-08-31",
+  });
+  await kalem(taslak, hizmetIdler.seo, "Arama motoru optimizasyonu", 1_850_000);
+
+  // Toplam temelli taksitli — listede temel ayrımı görünsün
+  await soz("PRV-2026-9003", "Web sitesi yenileme", "draft", {
+    amount_minor: 6_000_000,
+    amount_basis: "contract_total",
+    installment_count: 3,
+    end_date: null,
+    first_due_date: "2026-06-30",
+    discount_minor: 0,
+  });
+
+  // Sonlanmış ve iptal — liste durum çeşitliliği
+  await soz("PRV-2026-9004", "Basın ilişkileri", "ended", {
+    amount_minor: 1_200_000,
+    start_date: "2026-01-01",
+    end_date: "2026-06-30",
+    first_due_date: "2026-01-31",
+    activated_at: "2026-01-01T09:00:00+03",
+    ended_at: "2026-06-30T17:00:00+03",
+    end_reason: "Müşteri kapsamı küçülttü; yeni sözleşme hazırlanacak.",
+  });
+  await soz("PRV-2026-9005", "Kurumsal kimlik yenileme", "cancelled", {
+    amount_minor: 10_000_000,
+    amount_basis: "contract_total",
+    installment_count: 3,
+    end_date: null,
+    first_due_date: "2026-06-30",
+    discount_minor: 0,
+    cancelled_at: "2026-05-02T11:30:00+03",
+    cancel_reason: "Karşılıklı mutabakatla feshedildi; hiçbir hizmet verilmedi.",
+  });
+
+  await sql.end();
+  return { aktif, taslak };
 }
 
 await fixtureSifirla();
 const { bekleyenId, pasifId, opsId } = await kullaniciFixtureleri();
-const { svz: markaSvzId } = await markaFixtureleri();
+const { svz: markaSvzId, hizmetIdler } = await markaFixtureleri();
+const { aktif: sozAktifId, taslak: sozTaslakId } = await sozlesmeFixtureleri(
+  markaSvzId,
+  hizmetIdler,
+);
 
 /** Kullanıcı yönetimi ekranları — fixture kimlikleri hazır olduktan sonra eklenir. */
 shots.push(
@@ -724,6 +864,121 @@ shots.push(
 );
 
 /**
+ * Sprint 3 — GERÇEK sözleşme ekranları (wireframe değil).
+ *
+ * Roller bilerek karıştırılır: aynı ekranın FIN ve OPS görünümü yan yana
+ * konabilsin ve tutar alanlarının OPS'ta BULUNMADIĞI görselden de okunabilsin.
+ */
+const SOZ_AKTIF = `/sozlesmeler/${sozAktifId}`;
+const SOZ_TASLAK = `/sozlesmeler/${sozTaslakId}`;
+shots.push(
+  // ── 1. Liste ──
+  { file: "150-sozlesmeler-1440x900.png", path: "/sozlesmeler", w: 1440, h: 900, auth: "fin" },
+  { file: "151-sozlesmeler-mobil-375x1500.png", path: "/sozlesmeler", w: 375, h: 1500, auth: "fin" },
+
+  // ── 9. Boş ve filtreli durumlar ──
+  { file: "152-sozlesmeler-filtreli-1440x800.png", path: "/sozlesmeler?durum=draft", w: 1440, h: 800, auth: "fin" },
+  { file: "153-sozlesmeler-bos-1440x700.png", path: "/sozlesmeler?q=bulunmayan-sozlesme", w: 1440, h: 700, auth: "fin" },
+
+  // ── 2. Yeni sözleşme ──
+  { file: "154-sozlesme-yeni-1440x1700.png", path: "/sozlesmeler/yeni", w: 1440, h: 1700, auth: "fin",
+    async hazirla(page) {
+      await page.fill("#ys-baslik", "Sahte Yeni Sozlesme");
+      await page.fill("#ys-baslangic", "2026-09-01");
+      await page.fill("#ys-bitis", "2027-08-31");
+      await page.fill("#ys-tutar", "45.000,00");
+      await page.fill("#ys-odemegunu", "31");
+    } },
+  { file: "155-sozlesme-yeni-mobil-375x2500.png", path: "/sozlesmeler/yeni", w: 375, h: 2500, auth: "fin" },
+  // Toplam temeli seçilince etiketler değişir ve sınır uyarısı çıkar
+  { file: "156-sozlesme-yeni-toplam-temeli-1440x1700.png", path: "/sozlesmeler/yeni", w: 1440, h: 1700, auth: "fin",
+    async hazirla(page) {
+      await page.fill("#ys-baslik", "Sahte Toplam Temelli");
+      await page.fill("#ys-baslangic", "2026-09-01");
+      await page.fill("#ys-tutar", "60.000,00");
+      await page.getByRole("radio", { name: /Sözleşme toplam net tutarı/ }).check();
+    } },
+
+  // ── 3. Detay (aktif, FIN) ──
+  { file: "157-sozlesme-detay-1440x1500.png", path: SOZ_AKTIF, w: 1440, h: 1500, auth: "fin" },
+  { file: "158-sozlesme-detay-mobil-375x2400.png", path: SOZ_AKTIF, w: 375, h: 2400, auth: "fin" },
+
+  // ── 10. OPS salt okuma ──
+  { file: "159-sozlesme-detay-ops-1440x1100.png", path: SOZ_AKTIF, w: 1440, h: 1100, auth: "ops" },
+  { file: "160-sozlesmeler-ops-1440x800.png", path: "/sozlesmeler", w: 1440, h: 800, auth: "ops" },
+  { file: "161-sozlesme-detay-ops-mobil-375x1700.png", path: SOZ_AKTIF, w: 375, h: 1700, auth: "ops" },
+
+  // ── 5. Ödeme planı önizlemesi ──
+  { file: "162-odeme-plani-1440x1600.png", path: SOZ_AKTIF, w: 1440, h: 1600, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Ödeme planını gör" }).click();
+      await page.waitForSelector("text=Bu önizleme kayıt oluşturmaz");
+    } },
+  { file: "163-odeme-plani-mobil-375x2600.png", path: SOZ_AKTIF, w: 375, h: 2600, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Ödeme planını gör" }).click();
+      await page.waitForSelector("text=Bu önizleme kayıt oluşturmaz");
+    } },
+
+  // ── 7. Sonlandırma onayı ──
+  { file: "164-sonlandirma-onayi-1440x1000.png", path: SOZ_AKTIF, w: 1440, h: 1000, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Sonlandır" }).click();
+      await page.waitForSelector('[role="dialog"]');
+      await page.fill("#soz-gerekce", "Musteri kapsami kuculttu; yeni sozlesme hazirlanacak.");
+    } },
+  { file: "165-iptal-onayi-1440x1000.png", path: SOZ_AKTIF, w: 1440, h: 1000, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "İptal et" }).click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+
+  // ── 4. Taslak kalem düzenleme ──
+  { file: "166-kalem-duzenleme-1440x1300.png", path: SOZ_TASLAK, w: 1440, h: 1300, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Düzenle" }).first().click();
+      await page.waitForSelector("#kalem-h-0");
+    } },
+  { file: "167-kalem-duzenleme-mobil-375x1900.png", path: SOZ_TASLAK, w: 375, h: 1900, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Düzenle" }).first().click();
+      await page.waitForSelector("#kalem-h-0");
+    } },
+
+  // ── 6. Aktivasyon onayı ──
+  { file: "168-aktivasyon-onayi-1440x1100.png", path: SOZ_TASLAK, w: 1440, h: 1100, auth: "fin",
+    async hazirla(page) {
+      await page.getByRole("button", { name: "Yürürlüğe al" }).click();
+      await page.waitForSelector('[role="dialog"]');
+    } },
+  // ── 6b. Step-up penceresi (GERÇEKTEN tetiklenir) ──
+  { file: "169-aktivasyon-stepup-1440x1100.png", path: SOZ_TASLAK, w: 1440, h: 1100, auth: "fin",
+    async hazirla(page) {
+      /**
+       * Yükseltme silinir ve onay verilir; uç SESSION_STALE döner ve istemci
+       * step-up penceresini açar. Pencere sahte değildir.
+       */
+      await stepUpSifirla(OTURUM.fin.email);
+      await page.getByRole("button", { name: "Yürürlüğe al" }).click();
+      await page.waitForSelector('[role="dialog"]');
+      await page.getByRole("button", { name: "Yürürlüğe al" }).last().click();
+      await page.waitForSelector("#stepup-parola");
+    } },
+
+  // ── 8. Yenileme bilgileri ──
+  { file: "170-yenileme-karti-1440x900.png", path: SOZ_AKTIF, w: 1440, h: 900, auth: "fin",
+    clip: { x: 950, y: 300, width: 490, height: 560 } },
+  { file: "171-yenileme-duzenleme-1440x1100.png", path: SOZ_AKTIF, w: 1440, h: 1100, auth: "fin",
+    async hazirla(page) {
+      const kart = page.locator("section", {
+        has: page.getByRole("heading", { name: "Yenileme" }),
+      });
+      await kart.getByRole("button", { name: "Düzenle" }).click();
+      await page.waitForSelector("#yen-gorusme");
+    } },
+);
+
+/**
  * SORUMLU EKİP kartındaki "Kaldır" düğmesine basar.
  *
  * ⚠ Sayfada birden çok "Kaldır" var (yetkili kişiler kartı da içeriyor) ve DOM
@@ -758,9 +1013,23 @@ async function stepUpSifirla(email) {
  * Filtre verilmediğinde ve sunucu üretim modundaysa bu kareler atlanır —
  * script yarıda düşmesin, ama sessizce de geçmesin.
  */
+/**
+ * Filtre VİRGÜLLE ayrılmış birden çok desen alır:
+ *   SCREENSHOT_FILTER=162-,163-,170- npm run screenshots
+ *
+ * Tek desenle sınırlıyken bir grup kareyi yeniden çekmek için ya alakasız
+ * kareleri de kapsayan geniş bir desen ya da art arda birkaç koşu gerekiyordu;
+ * her koşu baştan giriş yapıp 2FA kurduğu için ikisi de pahalıydı.
+ */
 const FILTRE = process.env.SCREENSHOT_FILTER;
-const secilen = FILTRE ? shots.filter((s) => s.file.includes(FILTRE)) : shots;
-if (FILTRE) console.log(`· Filtre: "${FILTRE}" → ${secilen.length} kare\n`);
+const desenler = (FILTRE ?? "")
+  .split(",")
+  .map((d) => d.trim())
+  .filter(Boolean);
+const secilen = desenler.length
+  ? shots.filter((s) => desenler.some((d) => s.file.includes(d)))
+  : shots;
+if (desenler.length) console.log(`· Filtre: "${desenler.join('", "')}" → ${secilen.length} kare\n`);
 
 const browser = await chromium.launch();
 try {

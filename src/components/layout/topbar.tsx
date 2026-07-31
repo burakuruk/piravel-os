@@ -24,7 +24,9 @@ export function Topbar({
       <div className="flex items-center gap-3">
         <button
           type="button"
-          className="flex h-9 w-64 items-center gap-2 rounded-sm border border-line-300 bg-surface px-3 text-sm text-ink-400 hover:border-navy-500 max-md:w-9 max-md:justify-center max-md:px-0"
+          /* ⚠ Mobilde dokunma hedefi en az 44 px (06 §15): masaüstünde h-9
+             yoğunluğu korunur, parmak için max-sm altında 44 px'e çıkar. */
+          className="max-sm:min-h-11 max-sm:min-w-11 flex h-9 w-64 items-center gap-2 rounded-sm border border-line-300 bg-surface px-3 text-sm text-ink-400 hover:border-navy-500 max-md:w-9 max-md:justify-center max-md:px-0"
           aria-label="Global arama"
         >
           <Search size={15} strokeWidth={1.75} />
@@ -35,7 +37,7 @@ export function Topbar({
         </button>
         <button
           type="button"
-          className="relative flex h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100"
+          className="max-sm:min-h-11 max-sm:min-w-11 relative flex h-9 w-9 items-center justify-center rounded-sm text-ink-600 hover:bg-fill-100"
           aria-label="Bildirimler"
         >
           <Bell size={17} strokeWidth={1.75} />

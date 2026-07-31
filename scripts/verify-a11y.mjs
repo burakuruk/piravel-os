@@ -458,6 +458,77 @@ try {
     await sa.close();
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  console.log("\n═══ 9. Sözleşme ekranları — 375 px taşma ve dokunma hedefi ═══");
+  // ═══════════════════════════════════════════════════════════════════
+  /**
+   * ⚠ Yatay taşma BELGE VE ÖĞE düzeyinde ölçülür. Yalnız
+   * `scrollWidth > clientWidth` bakmak yetmez: `overflow-hidden` bir sarmalayıcı
+   * taşmayı gizler ama içerik yine ekran dışında kalır ve okunamaz.
+   */
+  {
+    const fin = await browser.newPage({ viewport: MOBIL, locale: "tr-TR" });
+    await oturumAc(fin, "finance@example.com", true);
+
+    const { rows: sozRows } = await sql.query(
+      "SELECT id::text AS id FROM contracts WHERE deleted_at IS NULL ORDER BY created_at DESC LIMIT 1",
+    );
+    const yollar = ["/sozlesmeler", "/sozlesmeler/yeni"];
+    if (sozRows[0]) yollar.push(`/sozlesmeler/${sozRows[0].id}`);
+
+    for (const yol of yollar) {
+      await fin.goto(`${BASE}${yol}`, { waitUntil: "domcontentloaded" });
+      await fin.evaluateHandle("document.fonts.ready");
+
+      const olcum = await fin.evaluate(() => {
+        const d = document.documentElement;
+        const tasanlar = [];
+        for (const el of document.querySelectorAll("body *")) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) continue;
+          if (r.right > d.clientWidth + 1 || r.left < -1) {
+            tasanlar.push(`${el.tagName.toLowerCase()}.${(el.className || "").toString().slice(0, 40)}`);
+          }
+        }
+        return { belge: d.scrollWidth - d.clientWidth, tasanlar: tasanlar.slice(0, 3), adet: tasanlar.length };
+      });
+      check(
+        `${yol} · 375 px'te yatay taşma yok`,
+        olcum.belge <= 0 && olcum.adet === 0,
+        `belge ${olcum.belge}px · taşan ${olcum.adet} ${olcum.tasanlar.join(" | ")}`,
+      );
+
+      /** Dokunma hedefi: 06 §15 — mobilde en az 44 px. */
+      const kucuk = await fin.evaluate(() => {
+        const out = [];
+        for (const el of document.querySelectorAll("a, button, select, input, textarea")) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0 && r.height === 0) continue;
+          if (el.getAttribute("type") === "checkbox" || el.getAttribute("type") === "radio") continue;
+          if (r.height < 44) {
+            const ad = (el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 20);
+            out.push(`${el.tagName.toLowerCase()}"${ad}":${Math.round(r.height)}px`);
+          }
+        }
+        return out;
+      });
+      check(
+        `${yol} · dokunma hedefleri ≥44 px`,
+        kucuk.length === 0,
+        kucuk.slice(0, 4).join(", "),
+      );
+    }
+
+    // Mobil kart GERÇEK bağlantı: klavye ve ekran okuyucu için <a> olmalı
+    await fin.goto(`${BASE}/sozlesmeler`, { waitUntil: "domcontentloaded" });
+    const kartBaglanti = await fin.evaluate(() =>
+      Boolean(document.querySelector('ul a[href^="/sozlesmeler/"]')),
+    );
+    check("mobil sözleşme kartı gerçek <a href> (onClick değil)", kartBaglanti);
+
+    await fin.close();
+  }
+
   await page.close();
 } finally {
   await browser.close();

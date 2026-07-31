@@ -1152,6 +1152,170 @@ console.log("\n═══ 13. CSV ═══");
   check("CSV dışa aktarımı denetime yazılıyor", exportAudit.rows[0].n >= 2, `${exportAudit.rows[0].n} kayıt`);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+console.log("\n═══ 14. GERÇEK EKRANLAR (HTML) ═══");
+// ═══════════════════════════════════════════════════════════════════════════
+/**
+ * ⚠ Buradaki kontroller API'yi değil EKRANI sınar.
+ *
+ * Bir alanın API yanıtında olmaması yetmez: sunucu bileşeni onu başka bir
+ * yoldan (ör. ayrı bir sorgu) çekip HTML'e basabilir. OPS'un gördüğü sayfanın
+ * KAYNAK KODUNDA da tutar geçmemeli.
+ */
+{
+  const taslakEkran = await fin.post("/api/v1/contracts", taslakGovde());
+  const taslakId = taslakEkran.json?.contract?.id;
+  const taslakNo = taslakEkran.json?.contract?.contractNo;
+  await fin.put(`/api/v1/contracts/${taslakId}/items`, {
+    items: [{ serviceId: F.hizmetBagli, quantity: 1, unitPriceMinor: 4_400_000 }],
+  });
+
+  // ── Rol görünürlüğü: durum KODU da sınanır ──
+  for (const [ad, c, beklenen] of [
+    ["SA", sa, 200],
+    ["FIN", fin, 200],
+    ["OPS", ops, 200],
+    ["MEM", mem, 404],
+  ]) {
+    const liste = await c.get("/sozlesmeler");
+    check(`${ad} /sozlesmeler → ${beklenen}`, liste.status === beklenen, `HTTP ${liste.status}`);
+  }
+
+  const memDetay = await mem.get(`/sozlesmeler/${taslakId}`);
+  check("MEM sözleşme detayında 404", memDetay.status === 404, `HTTP ${memDetay.status}`);
+  const memYeni = await mem.get("/sozlesmeler/yeni");
+  check("MEM yeni sözleşme ekranında 404", memYeni.status === 404, `HTTP ${memYeni.status}`);
+  const opsYeni = await ops.get("/sozlesmeler/yeni");
+  check("OPS yeni sözleşme ekranında 404", opsYeni.status === 404, `HTTP ${opsYeni.status}`);
+
+  // ── OPS ekranında finansal iz YOK ──
+  const opsListeHtml = (await ops.get("/sozlesmeler")).text;
+  const opsDetayHtml = (await ops.get(`/sozlesmeler/${taslakId}`)).text;
+  const FINANSAL_METIN = [
+    "44.000,00", "4.400.000", "amountMinor", "vatRate", "discountMinor",
+    "unitPriceMinor", "billingFrequency", "installmentCount", "grossAmountMinor",
+    "NET TUTAR", "Brüt tutar", "Ödeme planı", "İlk vade",
+  ];
+  const listeSizan = FINANSAL_METIN.filter((x) => opsListeHtml.includes(x));
+  const detaySizan = FINANSAL_METIN.filter((x) => opsDetayHtml.includes(x));
+  check(
+    "OPS liste HTML'inde tutar/KDV/faturalama izi yok",
+    listeSizan.length === 0,
+    listeSizan.join(", "),
+  );
+  check(
+    "OPS detay HTML'inde tutar/KDV/indirim/kur/ödeme/vade/kalem fiyatı yok",
+    detaySizan.length === 0,
+    detaySizan.join(", "),
+  );
+  check(
+    "OPS detayında rolün kapsamı açıkça yazıyor",
+    opsDetayHtml.includes("rolünüz kapsamında değildir"),
+  );
+
+  // FIN aynı ekranda tutarı GÖRÜYOR — kontrol boş bir sayfayı doğrulamıyor
+  const finDetayHtml = (await fin.get(`/sozlesmeler/${taslakId}`)).text;
+  check(
+    "FIN aynı detayda tutarı görüyor (test boş sayfayı doğrulamıyor)",
+    finDetayHtml.includes("45.000,00") && finDetayHtml.includes("Brüt tutar"),
+  );
+
+  // ── Sözleşme numarası ekranda DEĞİŞTİRİLEMEZ ──
+  check(
+    "detayda sözleşme numarası input değil (name/value ile form alanı yok)",
+    finDetayHtml.includes(taslakNo) &&
+      !new RegExp(`<input[^>]*value="${taslakNo}"`).test(finDetayHtml),
+  );
+  check(
+    "yeni sözleşme ekranında numara alanı yok, 'otomatik verilir' yazıyor",
+    (await fin.get("/sozlesmeler/yeni")).text.includes("otomatik verilir"),
+  );
+
+  // ── Mobil kart gerçek bağlantı ──
+  check(
+    "mobil kart listesi gerçek <a href> taşıyor",
+    new RegExp(`<a[^>]+href="/sozlesmeler/${taslakId}"`).test(
+      (await fin.get("/sozlesmeler")).text,
+    ),
+  );
+
+  // ── Taslak kalemleri düzenlenebilir, aktif kalemleri salt okunur ──
+  const taslakHtml = finDetayHtml;
+  check(
+    "taslakta kalemler için Düzenle var",
+    taslakHtml.includes("Kapsam kalemleri") && taslakHtml.includes("Düzenle"),
+  );
+  /**
+   * ⚠ Düğme metni ">…<" ile aranır. Düz `includes("Yürürlüğe al")` yanıltır:
+   * aktif sözleşmedeki "Yürürlüğe alındı: 31.07.2026" damgası da eşleşir ve
+   * test "düğme hâlâ duruyor" der.
+   */
+  check("taslakta Yürürlüğe al düğmesi var", taslakHtml.includes(">Yürürlüğe al<"));
+
+  await stepUpAl(fin, finSecret);
+  await fin.post(`/api/v1/contracts/${taslakId}/activate`);
+  const aktifHtml = (await fin.get(`/sozlesmeler/${taslakId}`)).text;
+  check(
+    "aktif sözleşmede kilit ibaresi görünüyor",
+    aktifHtml.includes("Kilitli") && aktifHtml.includes("değiştirilemez"),
+  );
+  check(
+    "aktif sözleşmede Yürürlüğe al düğmesi YOK, Sonlandır var",
+    !aktifHtml.includes(">Yürürlüğe al<") && aktifHtml.includes(">Sonlandır<"),
+  );
+  check(
+    "aktif sözleşmede yürürlük damgası görünüyor",
+    aktifHtml.includes("Yürürlüğe alındı:"),
+  );
+
+  // ── Ödeme planı ekranı: FIN'de var, OPS'ta yok ──
+  check("FIN detayında ödeme planı düğmesi var", aktifHtml.includes("Ödeme planını gör"));
+  check(
+    "OPS detayında ödeme planı düğmesi YOK",
+    !(await ops.get(`/sozlesmeler/${taslakId}`)).text.includes("Ödeme planını gör"),
+  );
+
+  // ── Boş ve filtreli durumlar ──
+  const bos = await fin.get("/sozlesmeler?q=kesinlikle-boyle-bir-sozlesme-yok");
+  check(
+    "filtre sonucu boş ekranı doğru metni gösteriyor",
+    bos.status === 200 &&
+      bos.text.includes("Bu filtrelerle eşleşen sözleşme yok") &&
+      bos.text.includes("Filtreleri temizle"),
+  );
+  check(
+    "boş filtre ekranında 'Henüz sözleşme yok' metni YOK (iki boşluk ayrı)",
+    !bos.text.includes("Henüz sözleşme yok"),
+  );
+
+  const opsBos = await ops.get("/sozlesmeler?marka=" + F.kapsamDisi);
+  check(
+    "OPS kapsam dışı marka filtresinde veri sızmıyor",
+    opsBos.status === 200 && !opsBos.text.includes("Sahte Kapsam Disi B"),
+  );
+
+  // ── CSV filtresi ekranla aynı ──
+  const csvFiltreli = await fin.get("/api/v1/contracts/export?status=draft");
+  const csvSatir = csvFiltreli.text.trim().split("\n").length;
+  const listeFiltreli = await fin.get("/api/v1/contracts?status=draft");
+  check(
+    "CSV filtresi liste ile aynı sayıda kayıt veriyor",
+    csvSatir - 1 === (listeFiltreli.json?.kayitlar?.length ?? -1),
+    `CSV ${csvSatir - 1} · liste ${listeFiltreli.json?.kayitlar?.length}`,
+  );
+
+  // ── 120 sınırı kullanıcıya AÇIK hata olarak dönüyor ──
+  const uzun = await fin.post(
+    "/api/v1/contracts",
+    taslakGovde({ installmentCount: 200, endDate: null }),
+  );
+  check(
+    "120 sınırı aşan yapılandırma açık hata veriyor (kesilmiş liste değil)",
+    uzun.status === 422 && uzun.json?.error?.code === "PREVIEW_TOO_LONG",
+    `HTTP ${uzun.status} ${uzun.json?.error?.code ?? ""}`,
+  );
+}
+
 // ── Özet ──────────────────────────────────────────────────────────────────
 const basarisiz = results.filter((r) => !r.ok);
 console.log(`\n${results.length - basarisiz.length}/${results.length} kontrol geçti`);
