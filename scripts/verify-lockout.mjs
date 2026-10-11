@@ -36,10 +36,11 @@ const HEDEF = "member@example.com";
 const RUN_ID = `test-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const results = [];
-function check(name, ok, detail = "") {
+function check(name, ok) {
   results.push({ name, ok });
-  console.log(`${ok ? "✓" : "✗"} ${name}${detail ? ` — ${detail}` : ""}`);
+  console.log(`${ok ? "✓" : "✗"} ${name}`);
 }
+
 
 const sql = new pg.Client({ connectionString: process.env.DATABASE_ADMIN_URL });
 await sql.connect();
