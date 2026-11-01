@@ -27,7 +27,7 @@
     "verify:styleguide": "node scripts/verify-styleguide.mjs"
   },
   "dependencies": {
-    "better-auth": "^1.6.25",
+    "better-auth": "^1.7.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
